@@ -178,6 +178,7 @@ void abFree(struct abuf *ab) {
 void editorDrawRows(struct abuf *ab) {
     int y;
     for (y=0; y < E.screen_rows; ++y) {
+        // Hoo and Version
         if (y == E.screen_rows / 3) {
             char welcome[80];
             int welcomelen = snprintf(welcome, sizeof(welcome), "Hoo -- version %s", HOO_VERSION);
@@ -186,18 +187,82 @@ void editorDrawRows(struct abuf *ab) {
                 welcomelen = E.screen_cols;             // truncate the length of the welcomelen
             }
 
-            int padding = (E.screen_cols - welcomelen) / 2;
-            if (padding) {
+            int padding_1st_l = (E.screen_cols - welcomelen) / 2;
+            if (padding_1st_l) {
                 abAppend(ab, "~", 1);
-                --padding;
+                --padding_1st_l;
             }
 
-            while (--padding) {
+            while (--padding_1st_l) {
                 abAppend(ab, " ", 1);
             }
-
             abAppend(ab, welcome, welcomelen);
         }
+
+        // Created by Ellan Aqira
+        else if (y == (E.screen_rows / 3) + 1) {
+            char creator[50];
+            int creatorlen = snprintf(creator, sizeof(creator), "by Ellan Aqira.");
+
+            if (creatorlen > E.screen_cols) {
+                creatorlen = E.screen_cols;
+            }
+
+            int padding_2st_l = (E.screen_cols - creatorlen) / 2;
+            if (padding_2st_l) {
+                abAppend(ab, "~", 1);
+                --padding_2st_l;
+            }
+
+            while (--padding_2st_l) {
+                abAppend(ab, " ", 1);
+            }
+            abAppend(ab, creator, creatorlen);
+        }
+
+        // Hoo is open source!
+        else if (y == (E.screen_rows / 3) + 2) {
+            char str[50];
+            int strlen = snprintf(str, sizeof(str), "Hoo is open source!");
+
+            if (strlen > E.screen_cols) {
+                strlen = E.screen_cols;
+            }
+
+            int padding_3st_l = (E.screen_cols - strlen) / 2;
+            if (padding_3st_l) {
+                abAppend(ab, "~", 1);
+                --padding_3st_l;
+            }
+
+            while (--padding_3st_l) {
+                abAppend(ab, " ", 1);
+            }
+            abAppend(ab, str, strlen);
+        }
+
+        // type ctrl + q to exit
+        else if (y == (E.screen_rows / 3) + 3) {
+            char howtoexit[50];
+            int howtoexitlen = snprintf(howtoexit, sizeof(howtoexit), "type  :'ctrl + q' to exit");
+
+            if (howtoexitlen > E.screen_cols) {
+                howtoexitlen = E.screen_cols;
+            }
+
+            int padding_4st_l = (E.screen_cols - howtoexitlen) / 2;
+            if (padding_4st_l) {
+                abAppend(ab, "~", 1);
+                --padding_4st_l;
+            }
+
+            while (--padding_4st_l) {
+                abAppend(ab, " ", 1);
+            }
+            abAppend(ab, howtoexit, howtoexitlen);
+        }
+
+
         else {
             abAppend(ab, "~", 1);
         }
