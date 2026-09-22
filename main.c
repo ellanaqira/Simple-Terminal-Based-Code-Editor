@@ -1,11 +1,16 @@
 
 /*** Includes ***/
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -29,10 +34,19 @@ enum editorKey {
 
 
 /*** Data ***/
+typedef struct erow {       // erow = editor row
+    int size;
+    char *chars;
+} erow;
+
 struct editorConfig {
     int cx, cy;
     int screen_rows;
     int screen_cols;
+
+    int numrows;
+    erow *row;
+
     struct termios orig_termios;
 };
 struct editorConfig E;
@@ -52,6 +66,10 @@ void disableRawMode();
 int editorReadKey();
 int getCursorPosition(int *rows, int *cols);
 int getWindowSize(int *rows, int *cols);
+// row operation ---
+void editorAppendRow(char *s, size_t len);
+// file i/o
+void editorOpen(char *filename);
 // append buffer ---
 void abAppend(struct abuf *ab, const char *s, int len);
 void abFree(struct abuf *ab);
@@ -66,9 +84,13 @@ void initEditor();
 
 
 /*** Main ***/
-int main() {
+int main(int argc, char *argv[]) {
     enableRawMode();
     initEditor();
+    
+    if (argc >= 2) {
+        editorOpen(argv[1]);
+    }
 
     while (1) {
         editorRefreshScreen();
@@ -225,6 +247,40 @@ int getWindowSize(int *rows, int *cols) {
     }
 }
 
+// row operation ---
+void editorAppendRow(char *s, size_t len) {
+    E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+
+    int at = E.numrows;
+    E.row[at].size = len;
+    E.row[at].chars = malloc(len + 1);
+    memcpy(E.row[at].chars, s, len);
+    E.row[at].chars[len] = '\0';
+    E.numrows++;
+}
+
+// file i/o
+void editorOpen(char *filename) {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) {
+        die("fopen");
+    }
+
+    char *line = NULL;
+    size_t lineCapacity = 0;
+    ssize_t linelen;
+
+    while ((linelen = getline(&line, &lineCapacity, fp)) != -1) {
+        while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r')) {
+            linelen--;
+        }
+
+        editorAppendRow(line, linelen);
+    }
+    free(line);
+    fclose(fp);
+}
+
 // Append Buffer ---
 void abAppend(struct abuf *ab, const char *s, int len) {
     char *new = realloc(ab->b, ab->len + len);
@@ -246,93 +302,104 @@ void abFree(struct abuf *ab) {
 void editorDrawRows(struct abuf *ab) {
     int y;
     for (y=0; y < E.screen_rows; ++y) {
-        // Hoo and Version
-        if (y == E.screen_rows / 3) {
-            char welcome[80];
-            int welcomelen = snprintf(welcome, sizeof(welcome), "Hoo -- version %s", HOO_VERSION);
+        if (y >= E.numrows) {    
 
-            if (welcomelen > E.screen_cols) {           // if terminal is too tiny to fit welcome message,
-                welcomelen = E.screen_cols;             // truncate the length of the welcomelen
+            // Hoo and Version
+            if (E.numrows == 0 && y == E.screen_rows / 3) {
+                char welcome[80];
+                int welcomelen = snprintf(welcome, sizeof(welcome), "Sector - version %s ", HOO_VERSION);
+
+                if (welcomelen > E.screen_cols) {           // if terminal is too tiny to fit welcome message,
+                    welcomelen = E.screen_cols;             // truncate the length of the welcomelen
+                }
+
+                int padding_1st_l = (E.screen_cols - welcomelen) / 2;
+                if (padding_1st_l) {
+                    abAppend(ab, "~", 1);
+                    padding_1st_l--;
+                }
+
+                while (padding_1st_l--) {
+                    abAppend(ab, " ", 1);
+                }
+                abAppend(ab, welcome, welcomelen);
             }
 
-            int padding_1st_l = (E.screen_cols - welcomelen) / 2;
-            if (padding_1st_l) {
+            // Created by Ellan Aqira
+            else if (E.numrows == 0 && y == (E.screen_rows / 3) + 1) {
+                char creator[50];
+                int creatorlen = snprintf(creator, sizeof(creator), "by  Ellan Aqira.");
+
+                if (creatorlen > E.screen_cols) {
+                    creatorlen = E.screen_cols;
+                }
+
+                int padding_2st_l = (E.screen_cols - creatorlen) / 2;
+                if (padding_2st_l) {
+                    abAppend(ab, "~", 1);
+                    --padding_2st_l;
+                }
+
+                while (--padding_2st_l) {
+                    abAppend(ab, " ", 1);
+                }
+                abAppend(ab, creator, creatorlen);
+            }
+
+            // Hoo is open source!
+            else if (E.numrows == 0 && y == (E.screen_rows / 3) + 2) {
+                char str[50];
+                int strlen = snprintf(str, sizeof(str), "Sector is open source!");
+
+                if (strlen > E.screen_cols) {
+                    strlen = E.screen_cols;
+                }
+
+                int padding_3st_l = (E.screen_cols - strlen) / 2;
+                if (padding_3st_l) {
+                    abAppend(ab, "~", 1);
+                    --padding_3st_l;
+                }
+
+                while (--padding_3st_l) {
+                    abAppend(ab, " ", 1);
+                }
+                abAppend(ab, str, strlen);
+            }
+
+            // type ctrl + q to exit
+            else if (E.numrows == 0 && y == (E.screen_rows / 3) + 3) {
+                char howtoexit[50];
+                int howtoexitlen = snprintf(howtoexit, sizeof(howtoexit), "type  : 'ctrl + q' to exit");
+
+                if (howtoexitlen > E.screen_cols) {
+                    howtoexitlen = E.screen_cols;
+                }
+
+                int padding_4st_l = (E.screen_cols - howtoexitlen) / 2;
+                if (padding_4st_l) {
+                    abAppend(ab, "~", 1);
+                    --padding_4st_l;
+                }
+
+                while (--padding_4st_l) {
+                    abAppend(ab, " ", 1);
+                }
+                abAppend(ab, howtoexit, howtoexitlen);
+            }
+
+
+            else {
                 abAppend(ab, "~", 1);
-                --padding_1st_l;
             }
-
-            while (--padding_1st_l) {
-                abAppend(ab, " ", 1);
-            }
-            abAppend(ab, welcome, welcomelen);
         }
-
-        // Created by Ellan Aqira
-        else if (y == (E.screen_rows / 3) + 1) {
-            char creator[50];
-            int creatorlen = snprintf(creator, sizeof(creator), "by Ellan Aqira.");
-
-            if (creatorlen > E.screen_cols) {
-                creatorlen = E.screen_cols;
-            }
-
-            int padding_2st_l = (E.screen_cols - creatorlen) / 2;
-            if (padding_2st_l) {
-                abAppend(ab, "~", 1);
-                --padding_2st_l;
-            }
-
-            while (--padding_2st_l) {
-                abAppend(ab, " ", 1);
-            }
-            abAppend(ab, creator, creatorlen);
-        }
-
-        // Hoo is open source!
-        else if (y == (E.screen_rows / 3) + 2) {
-            char str[50];
-            int strlen = snprintf(str, sizeof(str), "Hoo is open source!");
-
-            if (strlen > E.screen_cols) {
-                strlen = E.screen_cols;
-            }
-
-            int padding_3st_l = (E.screen_cols - strlen) / 2;
-            if (padding_3st_l) {
-                abAppend(ab, "~", 1);
-                --padding_3st_l;
-            }
-
-            while (--padding_3st_l) {
-                abAppend(ab, " ", 1);
-            }
-            abAppend(ab, str, strlen);
-        }
-
-        // type ctrl + q to exit
-        else if (y == (E.screen_rows / 3) + 3) {
-            char howtoexit[50];
-            int howtoexitlen = snprintf(howtoexit, sizeof(howtoexit), "type  :'ctrl + q' to exit");
-
-            if (howtoexitlen > E.screen_cols) {
-                howtoexitlen = E.screen_cols;
-            }
-
-            int padding_4st_l = (E.screen_cols - howtoexitlen) / 2;
-            if (padding_4st_l) {
-                abAppend(ab, "~", 1);
-                --padding_4st_l;
-            }
-
-            while (--padding_4st_l) {
-                abAppend(ab, " ", 1);
-            }
-            abAppend(ab, howtoexit, howtoexitlen);
-        }
-
 
         else {
-            abAppend(ab, "~", 1);
+            int len = E.row[y].size;
+            if (len > E.screen_cols) {
+                len = E.screen_cols;
+            }
+            abAppend(ab, E.row[y].chars, len);
         }
 
         abAppend(ab, "\x1b[K", 3);          // [K = erases part of the current line
@@ -429,6 +496,8 @@ void editorProcessKeypress() {
 void initEditor() {
     E.cx = 0;
     E.cy = 0;
+    E.numrows = 0;
+    E.row = NULL;
 
     if (getWindowSize(&E.screen_rows, &E.screen_cols) == -1) {
         die("getWindowSize");
