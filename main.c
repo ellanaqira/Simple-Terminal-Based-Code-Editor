@@ -41,6 +41,7 @@ typedef struct erow {       // erow = editor row
 
 struct editorConfig {
     int cx, cy;
+    int row_offset;
     int screen_rows;
     int screen_cols;
 
@@ -74,6 +75,7 @@ void editorOpen(char *filename);
 void abAppend(struct abuf *ab, const char *s, int len);
 void abFree(struct abuf *ab);
 // Output ---
+void editorScroll();
 void editorDrawRows();
 void editorRefreshScreen();
 // Input ---
@@ -299,10 +301,20 @@ void abFree(struct abuf *ab) {
 }
 
 // Output ---
+void editorScroll() {
+    if (E.cy < E.row_offset) {
+        E.row_offset = E.cy;
+    }
+    if (E.cy >= E.row_offset + E.screen_rows) {
+        E.row_offset = E.cy - E.screen_rows + 1;
+    }
+}
+
 void editorDrawRows(struct abuf *ab) {
     int y;
     for (y=0; y < E.screen_rows; ++y) {
-        if (y >= E.numrows) {    
+        int filerow = y + E.row_offset;
+        if (filerow >= E.numrows) {    
 
             // Hoo and Version
             if (E.numrows == 0 && y == E.screen_rows / 3) {
@@ -395,11 +407,11 @@ void editorDrawRows(struct abuf *ab) {
         }
 
         else {
-            int len = E.row[y].size;
+            int len = E.row[filerow].size;
             if (len > E.screen_cols) {
                 len = E.screen_cols;
             }
-            abAppend(ab, E.row[y].chars, len);
+            abAppend(ab, E.row[filerow].chars, len);
         }
 
         abAppend(ab, "\x1b[K", 3);          // [K = erases part of the current line
@@ -411,6 +423,8 @@ void editorDrawRows(struct abuf *ab) {
 }
 
 void editorRefreshScreen() {
+    editorScroll();
+
     struct abuf ab = ABUF_INIT;
 
     abAppend(&ab, "\x1b[?25l", 6);          // [?25l = hide the cursor
@@ -447,7 +461,7 @@ void editorMoveCursor(int key) {
             }
             break;
         case ARROW_DOWN:
-            if (E.cy != E.screen_rows - 1) {
+            if (E.cy < E.numrows) {
                 E.cy++;
             }
             break;
@@ -496,6 +510,7 @@ void editorProcessKeypress() {
 void initEditor() {
     E.cx = 0;
     E.cy = 0;
+    E.row_offset = 0;
     E.numrows = 0;
     E.row = NULL;
 
