@@ -3,23 +3,30 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
 
 /*** Defines ***/
+#define KILO_VERSION "0.0.1"
 #define CTRL_KEY(k) ((k) & 0x1f)
-
+#define ABUF_INIT {NULL, 0};
 
 /*** Data ***/
+// Editor Configuration ---
 struct editorConfig {
     int screenrows;
     int screencols;
     struct termios OrigTermSet;
 };
-
 struct editorConfig editor;
+// Append Buffer ---
+struct appendBuffer {
+    char *buf;
+    int len;
+};
 
 
 /*** Functions Declaration ***/
@@ -30,9 +37,12 @@ void enableRawMode();
 char editorReadKey();
 int getCursorPosition(int *rows, int *cols);
 int getWindowSize(int *rows, int *cols);
+// Append Buffer ---
+void abAppend(struct appendBuffer *buffer, const char *s, int length);
+void abFree(struct appendBuffer *buffer);
 // Output ---
+void editorDrawRows(struct appendBuffer *buffer);
 void editorRefreshScreen();
-void editorDrawRows();
 // Input ---
 int editorProcessKeypress();
 // Init ---
@@ -134,25 +144,87 @@ int getWindowSize(int *rows, int *cols) {
     }
 }
 
+// Append Buffer ---
+void abAppend(struct appendBuffer *buffer, const char *s, int length) {
+    // resize the memory of buf from struct buffer and store the reaturn at new_buff
+    char *new_buff = realloc(buffer->buf, buffer->len + length);
+
+    if (new_buff == NULL) return;   // exit function if new_buff == NULL
+    memcpy(&new_buff[buffer->len], s, length);  // copy the s to new_buff at index len
+    buffer->buf = new_buff; // store the content of new_buff to buf
+    buffer->len += length;  // add previous len with lenght and store it at len
+
+}
+
+void abFree(struct appendBuffer *buffer) {
+    free(buffer->buf);
+}
+
 // Output ---
-void editorDrawRows() {
+void editorDrawRows(struct appendBuffer *buffer) {
     int y;
     for(y=0; y < editor.screenrows; y++) {
-        write(STDOUT_FILENO, "~", 1);
+        // string placement based on rows
+        if (y == editor.screenrows / 3) {
+        // Sector and Version
+            char sectorVer[50];
+            int sectorVerLen = snprintf(sectorVer, sizeof(sectorVer), "Sector -- version %s", KILO_VERSION);
 
+            // string placement based on columns
+            if (sectorVerLen > editor.screencols) sectorVerLen = editor.screencols;
+            int padding1 = (editor.screencols - sectorVerLen) / 2;
+            if (padding1) {
+                abAppend(buffer, "~", 1);
+                padding1--;
+            }
+            while (padding1 != 0) {
+                abAppend(buffer, " ", 1);
+                padding1 --;
+            }
+            abAppend(buffer, sectorVer, sectorVerLen);
+
+        // Made by Ellan Aqira
+            abAppend(buffer, "\r\n", 2);
+            char madeBy[50];
+            int madeByLen = snprintf(madeBy, sizeof(madeBy), "Made by Ellan Aqira");
+
+            // string placement based on columns
+            if (madeByLen > editor.screencols) madeByLen = editor.screencols;
+            int padding2 = (editor.screencols - madeByLen) / 2;
+            if (padding2) {
+                abAppend(buffer, "~", 1);
+                padding2--;
+            }
+            while (padding2 != 0) {
+                abAppend(buffer, " ", 1);
+                padding2 --;
+            }
+            abAppend(buffer, madeBy, madeByLen);
+
+        }
+        else {
+            abAppend(buffer, "~", 1);
+        }
+        abAppend(buffer, "\x1b[K", 3);  // erase character from the active position to the end of line
         if (y < editor.screenrows-1) {
-            write(STDOUT_FILENO, "\r\n", 2);
+            abAppend(buffer, "\r\n", 2);
         }
     }
 }
 
 void editorRefreshScreen() {
-    write(STDOUT_FILENO, "\x1b[2J", 4);     // clear the screen
-    write(STDOUT_FILENO, "\x1b[H", 3);      // move the cursor to the top-left corner
+    struct appendBuffer add_buffer = ABUF_INIT; // initialize add_buffer.buf to NULL and add_buffer.len to 0
 
-    editorDrawRows();
+    abAppend(&add_buffer, "\x1b[?25l", 6);  // makes the cursor invisible      
+    abAppend(&add_buffer, "\x1b[H", 3);     // move the cursor to the top-left corner
 
-    write(STDOUT_FILENO, "\x1b[H", 3);      // move the cursor to the top-left corner
+    editorDrawRows(&add_buffer);
+
+    abAppend(&add_buffer, "\x1b[H", 3);     // move the cursor to the top-left corner
+    abAppend(&add_buffer, "\x1b[?25h", 6);  // makes the cursor visible
+
+    write(STDOUT_FILENO, add_buffer.buf, add_buffer.len);   // write all stored character at buf to the screen
+    abFree(&add_buffer);
 }
 
 // Input ---
