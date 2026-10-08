@@ -10,7 +10,11 @@
 
 
 /*** Defines ***/
-#define KILO_VERSION "0.0.1"
+#define SCTR_VERSION "0.0.1"
+#define SCTR "Sector -- version"
+#define MADE_BY "Made by Ellan Aqira"
+#define HOW_TO_EXIT "type  :ctrl + q     to exit"
+
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define ABUF_INIT {NULL, 0};
 
@@ -168,8 +172,7 @@ void editorDrawRows(struct appendBuffer *buffer) {
         if (y == editor.screenrows / 3) {
         // Sector and Version
             char sectorVer[50];
-            int sectorVerLen = snprintf(sectorVer, sizeof(sectorVer), "Sector -- version %s", KILO_VERSION);
-
+            int sectorVerLen = snprintf(sectorVer, sizeof(sectorVer), "%s %s", SCTR, SCTR_VERSION);
             // string placement based on columns
             if (sectorVerLen > editor.screencols) sectorVerLen = editor.screencols;
             int padding1 = (editor.screencols - sectorVerLen) / 2;
@@ -186,8 +189,7 @@ void editorDrawRows(struct appendBuffer *buffer) {
         // Made by Ellan Aqira
             abAppend(buffer, "\r\n", 2);
             char madeBy[50];
-            int madeByLen = snprintf(madeBy, sizeof(madeBy), "Made by Ellan Aqira");
-
+            int madeByLen = snprintf(madeBy, sizeof(madeBy), "%s", MADE_BY);
             // string placement based on columns
             if (madeByLen > editor.screencols) madeByLen = editor.screencols;
             int padding2 = (editor.screencols - madeByLen) / 2;
@@ -201,6 +203,22 @@ void editorDrawRows(struct appendBuffer *buffer) {
             }
             abAppend(buffer, madeBy, madeByLen);
 
+        // How to exit
+            abAppend(buffer, "\r\n", 2);
+            char howToExit[50];
+            int howToExitLen = snprintf(howToExit, sizeof(howToExit), "%s", HOW_TO_EXIT);
+            // string placement based on columns
+            if (howToExitLen > editor.screencols) howToExitLen = editor.screencols;
+            int padding3 = (editor.screencols - howToExitLen) / 2;
+            if (padding3) {
+                abAppend(buffer, "~", 1);
+                padding3--;
+            }
+            while(padding3 != 0) {
+                abAppend(buffer, " ", 1);
+                padding3--;
+            }
+            abAppend(buffer, howToExit, howToExitLen);
         }
         else {
             abAppend(buffer, "~", 1);
