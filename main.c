@@ -1,3 +1,11 @@
+
+
+// *************{ Things You need to understand }*************
+// ✅1. run the code and type any character,
+//     Why does a snippet of the last message appear at the end of the first message line? 
+//  2. understand the code at 244 - 247
+
+
 /*** Includes ***/
 #include <ctype.h>
 #include <errno.h>
@@ -13,6 +21,7 @@
 #define SCTR_VERSION "0.0.1"
 #define SCTR "Sector -- version"
 #define MADE_BY "Made by Ellan Aqira"
+#define SCTR_IS_OPEN_SOURCE "Sector is open source"
 #define HOW_TO_EXIT "type  :ctrl + q     to exit"
 
 #define CTRL_KEY(k) ((k) & 0x1f)
@@ -21,6 +30,7 @@
 /*** Data ***/
 // Editor Configuration ---
 struct editorConfig {
+    int cursorX, cursorY;
     int screenrows;
     int screencols;
     struct termios OrigTermSet;
@@ -45,9 +55,11 @@ int getWindowSize(int *rows, int *cols);
 void abAppend(struct appendBuffer *buffer, const char *s, int length);
 void abFree(struct appendBuffer *buffer);
 // Output ---
+void editorAddMessage(struct appendBuffer *buffer, char *message, int messageLen);
 void editorDrawRows(struct appendBuffer *buffer);
 void editorRefreshScreen();
 // Input ---
+void editorMoveCursor(char key);
 int editorProcessKeypress();
 // Init ---
 void initEditor();
@@ -106,7 +118,31 @@ char editorReadKey() {
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
         if (nread == -1 && errno != EAGAIN) die("read");
     }
-    return c;
+
+    if (c == '\x1b') {
+        // pressing arrow key producing "ESC [ (A/B/C/D)"
+        // ESC ("\x1b") is already stored at c
+        // "[" and "A"/"B"/"C"/"D" remain and are waiting to be read
+        char escapeSeq[3];
+
+        // try to read "[" and store it at escapeSeq[0]
+        if (read(STDIN_FILENO, &escapeSeq[0], 1) != 1) return '\x1b';
+        // try to read "A"/"B"/"C"/"D" and store it at escapeSeq[1]
+        if (read(STDIN_FILENO, &escapeSeq[1], 1) != 1) return '\x1b';
+
+        if (escapeSeq[0] == '[') {
+            switch (escapeSeq[1]) {
+                case 'A': return 'w';
+                case 'B': return 's';
+                case 'C': return 'd';
+                case 'D': return 'a';
+            }
+        }
+        return '\x1b';
+    }
+    else {
+        return c;
+    }
 }
 
 int getCursorPosition(int *rows, int *cols) {
@@ -165,6 +201,21 @@ void abFree(struct appendBuffer *buffer) {
 }
 
 // Output ---
+void editorAddMessage(struct appendBuffer *buffer, char *message, int messageLen) {
+    // Add "~", a few spaces, and a message to the buffer to be printed out later. 
+    if (messageLen > editor.screencols) messageLen = editor.screencols;
+    int padding = (editor.screencols - messageLen) / 2;
+    if (padding) {
+        abAppend(buffer, "~", 1);   // add "~" to the buffer
+        padding--;
+    }
+    while(padding != 0) {
+        abAppend(buffer, " ", 1);   // add some spaces to buffer
+        padding--;
+    }
+    abAppend(buffer, message, messageLen);  // add the message to the buffer
+}
+
 void editorDrawRows(struct appendBuffer *buffer) {
     int y;
     for(y=0; y < editor.screenrows; y++) {
@@ -174,51 +225,28 @@ void editorDrawRows(struct appendBuffer *buffer) {
             char sectorVer[50];
             int sectorVerLen = snprintf(sectorVer, sizeof(sectorVer), "%s %s", SCTR, SCTR_VERSION);
             // string placement based on columns
-            if (sectorVerLen > editor.screencols) sectorVerLen = editor.screencols;
-            int padding1 = (editor.screencols - sectorVerLen) / 2;
-            if (padding1) {
-                abAppend(buffer, "~", 1);
-                padding1--;
-            }
-            while (padding1 != 0) {
-                abAppend(buffer, " ", 1);
-                padding1 --;
-            }
-            abAppend(buffer, sectorVer, sectorVerLen);
-
+            editorAddMessage(buffer, sectorVer, sectorVerLen);
+        }
+        else if (y == (editor.screenrows / 3) + 2) {
         // Made by Ellan Aqira
-            abAppend(buffer, "\r\n", 2);
             char madeBy[50];
             int madeByLen = snprintf(madeBy, sizeof(madeBy), "%s", MADE_BY);
             // string placement based on columns
-            if (madeByLen > editor.screencols) madeByLen = editor.screencols;
-            int padding2 = (editor.screencols - madeByLen) / 2;
-            if (padding2) {
-                abAppend(buffer, "~", 1);
-                padding2--;
-            }
-            while (padding2 != 0) {
-                abAppend(buffer, " ", 1);
-                padding2 --;
-            }
-            abAppend(buffer, madeBy, madeByLen);
-
+            editorAddMessage(buffer, madeBy, madeByLen);
+        }
+        else if (y == (editor.screenrows / 3) + 3) {
+        // Sector is open source
+            char isOpenSource[50];
+            int isOpenSourceLen = snprintf(isOpenSource, sizeof(isOpenSource), "%s", SCTR_IS_OPEN_SOURCE);
+            // string placement based on columns
+            editorAddMessage(buffer, isOpenSource, isOpenSourceLen);
+        }
+        else if (y == (editor.screenrows / 3) + 4) {
         // How to exit
-            abAppend(buffer, "\r\n", 2);
             char howToExit[50];
             int howToExitLen = snprintf(howToExit, sizeof(howToExit), "%s", HOW_TO_EXIT);
             // string placement based on columns
-            if (howToExitLen > editor.screencols) howToExitLen = editor.screencols;
-            int padding3 = (editor.screencols - howToExitLen) / 2;
-            if (padding3) {
-                abAppend(buffer, "~", 1);
-                padding3--;
-            }
-            while(padding3 != 0) {
-                abAppend(buffer, " ", 1);
-                padding3--;
-            }
-            abAppend(buffer, howToExit, howToExitLen);
+            editorAddMessage(buffer, howToExit, howToExitLen);
         }
         else {
             abAppend(buffer, "~", 1);
@@ -238,7 +266,11 @@ void editorRefreshScreen() {
 
     editorDrawRows(&add_buffer);
 
-    abAppend(&add_buffer, "\x1b[H", 3);     // move the cursor to the top-left corner
+    char buf_cursor[32];
+    // set the cursor position to top left corner
+    snprintf(buf_cursor, sizeof(buf_cursor), "\x1b[%d;%dH", editor.cursorY + 1, editor.cursorX + 1);
+    abAppend(&add_buffer, buf_cursor, strlen(buf_cursor));
+
     abAppend(&add_buffer, "\x1b[?25h", 6);  // makes the cursor visible
 
     write(STDOUT_FILENO, add_buffer.buf, add_buffer.len);   // write all stored character at buf to the screen
@@ -246,12 +278,37 @@ void editorRefreshScreen() {
 }
 
 // Input ---
+void editorMoveCursor(char key) {
+    switch (key) {
+        case 'w':
+            editor.cursorY--;
+            break;
+        case 'a':
+            editor.cursorX--;
+            break;
+        case 's':
+            editor.cursorY++;
+            break;
+        case 'd':
+            editor.cursorX++;
+            break;
+    }
+}
 int editorProcessKeypress() {
     char c = editorReadKey();
     switch(c) {
         case CTRL_KEY('q'):
+            write(STDOUT_FILENO, "\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3);
             exit(0);
             break;
+        case 'w':
+        case 'a':
+        case 's':
+        case 'd':
+            editorMoveCursor(c);
+            break;
+
     }
     return 0;
 }
@@ -259,5 +316,7 @@ int editorProcessKeypress() {
 // Init ---
 void initEditor() {
     // pass the value of screen rows and cols to editor struct;
+    editor.cursorX = 0;
+    editor.cursorY = 0;
     if (getWindowSize(&editor.screenrows, &editor.screencols) == -1) die("getWindowSize");
 }
