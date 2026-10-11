@@ -1,11 +1,4 @@
 
-
-// *************{ Things You need to understand }*************
-// ✅1. run the code and type any character,
-//     Why does a snippet of the last message appear at the end of the first message line? 
-//  2. understand the code at 244 - 247
-
-
 /*** Includes ***/
 #include <ctype.h>
 #include <errno.h>
@@ -26,6 +19,18 @@
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define ABUF_INIT {NULL, 0};
+
+enum editorKey {
+    ARROW_UP = 1000,
+    ARROW_LEFT,
+    ARROW_DOWN,
+    ARROW_RIGHT,
+    DELETE_KEY,
+    HOME_KEY,
+    END_KEY,
+    PAGE_UP,
+    PAGE_DOWN
+};
 
 /*** Data ***/
 // Editor Configuration ---
@@ -48,7 +53,7 @@ struct appendBuffer {
 void die(const char *s);
 void disableRawMode();
 void enableRawMode();
-char editorReadKey();
+int editorReadKey();
 int getCursorPosition(int *rows, int *cols);
 int getWindowSize(int *rows, int *cols);
 // Append Buffer ---
@@ -59,7 +64,7 @@ void editorAddMessage(struct appendBuffer *buffer, char *message, int messageLen
 void editorDrawRows(struct appendBuffer *buffer);
 void editorRefreshScreen();
 // Input ---
-void editorMoveCursor(char key);
+void editorMoveCursor(int key);
 int editorProcessKeypress();
 // Init ---
 void initEditor();
@@ -112,7 +117,7 @@ void enableRawMode() {
     atexit(disableRawMode); // call disableRawMode when the program terminates normally
 }
 
-char editorReadKey() {
+int editorReadKey() {
     int nread;
     char c;
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
@@ -131,16 +136,38 @@ char editorReadKey() {
         if (read(STDIN_FILENO, &escapeSeq[1], 1) != 1) return '\x1b';
 
         if (escapeSeq[0] == '[') {
+            if (escapeSeq[1] >= '0' && escapeSeq[1] <= '9') {
+                if (read(STDIN_FILENO, &escapeSeq[2], 1) != 1) return '\x1b';
+                if (escapeSeq[2] == '~') {
+                    switch (escapeSeq[1]) {
+                        case '1': return HOME_KEY;
+                        case '3': return DELETE_KEY;
+                        case '4': return END_KEY;
+                        case '5': return PAGE_UP;
+                        case '6': return PAGE_DOWN;
+                        case '7': return HOME_KEY;
+                        case '8': return END_KEY;
+                    }
+                }
+            } else { 
+                switch (escapeSeq[1]) {
+                    case 'A': return ARROW_UP;
+                    case 'B': return ARROW_DOWN;
+                    case 'C': return ARROW_RIGHT;
+                    case 'D': return ARROW_LEFT;
+                    case 'F': return END_KEY;
+                    case 'H': return HOME_KEY;
+                }
+            }
+        } else if (escapeSeq[0] == 'O') {
             switch (escapeSeq[1]) {
-                case 'A': return 'w';
-                case 'B': return 's';
-                case 'C': return 'd';
-                case 'D': return 'a';
+                case 'F': return END_KEY;
+                case 'H': return HOME_KEY;
             }
         }
+
         return '\x1b';
-    }
-    else {
+    } else {
         return c;
     }
 }
@@ -176,8 +203,7 @@ int getWindowSize(int *rows, int *cols) {
         // move the cursor right and downward until hit the margin
         if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B" , 12) != 12) return -1;
         return getCursorPosition(rows, cols);
-    }
-    else {
+    } else {
         *cols = winsz.ws_col;
         *rows = winsz.ws_row;
         return 0;
@@ -186,7 +212,7 @@ int getWindowSize(int *rows, int *cols) {
 
 // Append Buffer ---
 void abAppend(struct appendBuffer *buffer, const char *s, int length) {
-    // resize the memory of buf from struct buffer and store the reaturn at new_buff
+    // resize the memory of buf from struct buffer and store the return at new_buff
     char *new_buff = realloc(buffer->buf, buffer->len + length);
 
     if (new_buff == NULL) return;   // exit function if new_buff == NULL
@@ -226,32 +252,30 @@ void editorDrawRows(struct appendBuffer *buffer) {
             int sectorVerLen = snprintf(sectorVer, sizeof(sectorVer), "%s %s", SCTR, SCTR_VERSION);
             // string placement based on columns
             editorAddMessage(buffer, sectorVer, sectorVerLen);
-        }
-        else if (y == (editor.screenrows / 3) + 2) {
+        } else if (y == (editor.screenrows / 3) + 2) {
         // Made by Ellan Aqira
             char madeBy[50];
             int madeByLen = snprintf(madeBy, sizeof(madeBy), "%s", MADE_BY);
             // string placement based on columns
             editorAddMessage(buffer, madeBy, madeByLen);
-        }
-        else if (y == (editor.screenrows / 3) + 3) {
+        } else if (y == (editor.screenrows / 3) + 3) {
         // Sector is open source
             char isOpenSource[50];
             int isOpenSourceLen = snprintf(isOpenSource, sizeof(isOpenSource), "%s", SCTR_IS_OPEN_SOURCE);
             // string placement based on columns
             editorAddMessage(buffer, isOpenSource, isOpenSourceLen);
-        }
-        else if (y == (editor.screenrows / 3) + 4) {
+        } else if (y == (editor.screenrows / 3) + 5) {
         // How to exit
             char howToExit[50];
             int howToExitLen = snprintf(howToExit, sizeof(howToExit), "%s", HOW_TO_EXIT);
             // string placement based on columns
             editorAddMessage(buffer, howToExit, howToExitLen);
-        }
-        else {
+        } else {
             abAppend(buffer, "~", 1);
         }
+
         abAppend(buffer, "\x1b[K", 3);  // erase character from the active position to the end of line
+
         if (y < editor.screenrows-1) {
             abAppend(buffer, "\r\n", 2);
         }
@@ -278,34 +302,64 @@ void editorRefreshScreen() {
 }
 
 // Input ---
-void editorMoveCursor(char key) {
+void editorMoveCursor(int key) {
     switch (key) {
-        case 'w':
-            editor.cursorY--;
+        case ARROW_UP:
+            if (editor.cursorY != 0) {
+                editor.cursorY--;
+            }
             break;
-        case 'a':
-            editor.cursorX--;
+        case ARROW_LEFT:
+            if (editor.cursorX != 0) {
+                editor.cursorX--;
+            }
             break;
-        case 's':
-            editor.cursorY++;
+        case ARROW_DOWN:
+            if (editor.cursorY != editor.screenrows-1) {
+                editor.cursorY++;
+            }
             break;
-        case 'd':
-            editor.cursorX++;
+        case ARROW_RIGHT:
+            if (editor.cursorX != editor.screencols-1) {
+                editor.cursorX++;
+            }
             break;
     }
 }
 int editorProcessKeypress() {
-    char c = editorReadKey();
+    int c = editorReadKey();
     switch(c) {
         case CTRL_KEY('q'):
             write(STDOUT_FILENO, "\x1b[2J", 4);
             write(STDOUT_FILENO, "\x1b[H", 3);
             exit(0);
             break;
-        case 'w':
-        case 'a':
-        case 's':
-        case 'd':
+
+        case HOME_KEY:
+            editor.cursorX = 0;
+            break;
+        case END_KEY:
+            editor.cursorX = editor.screencols-1;
+            break;
+
+        case PAGE_UP:
+        case PAGE_DOWN:
+            {
+                int times = editor.screenrows;
+                while(times--) {
+                    if (c == PAGE_UP) {
+                        editorMoveCursor(ARROW_UP);
+                    } else {
+                        editorMoveCursor(ARROW_DOWN);
+                    }
+                }
+            }
+            break;
+
+        case ARROW_UP:
+        case ARROW_LEFT:
+        case ARROW_DOWN:
+        case ARROW_RIGHT:
             editorMoveCursor(c);
             break;
 
