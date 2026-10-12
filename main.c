@@ -1,5 +1,9 @@
 
 /*** Includes ***/
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -33,14 +37,21 @@ enum editorKey {
 };
 
 /*** Data ***/
+// Editor Row
+typedef struct editorRow {
+    int size;
+    char *characters;
+} editorRow;
 // Editor Configuration ---
 struct editorConfig {
     int cursorX, cursorY;
     int screenrows;
     int screencols;
+    int numrows;
+    editorRow *row;  // 'Editor.row' is an array of 'editorRow' 
     struct termios OrigTermSet;
 };
-struct editorConfig editor;
+struct editorConfig Editor;
 // Append Buffer ---
 struct appendBuffer {
     char *buf;
@@ -56,6 +67,10 @@ void enableRawMode();
 int editorReadKey();
 int getCursorPosition(int *rows, int *cols);
 int getWindowSize(int *rows, int *cols);
+// Row Operations ---
+void editorAppendRow(char *s, size_t len);
+// File I/O ---
+void editorOpen(char *filename);
 // Append Buffer ---
 void abAppend(struct appendBuffer *buffer, const char *s, int length);
 void abFree(struct appendBuffer *buffer);
@@ -71,9 +86,12 @@ void initEditor();
 
 
 /*** Main ***/
-int main() {
+int main(int argc, char *argv[]) {
     enableRawMode();
     initEditor();
+    if (argc >= 2) {
+        editorOpen(argv[1]);
+    }
 
     while (1) {
         editorRefreshScreen();
@@ -92,17 +110,17 @@ void die(const char *s) {
 }
 
 void disableRawMode() {
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &editor.OrigTermSet) == -1) die("tcsetattr");
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &Editor.OrigTermSet) == -1) die("tcsetattr");
 
     write(STDOUT_FILENO, "\x1b[?1049l", 8); // restore cursor position and disable alternative buffer
-    printf("row = %d\r\n", editor.screenrows);
-    printf("col = %d\r\n", editor.screencols);
+    printf("row = %d\r\n", Editor.screenrows);
+    printf("col = %d\r\n", Editor.screencols);
 }
 
 void enableRawMode() {
-    if (tcgetattr(STDIN_FILENO, &editor.OrigTermSet) == -1) die("tcgetattr");
+    if (tcgetattr(STDIN_FILENO, &Editor.OrigTermSet) == -1) die("tcgetattr");
 
-    struct termios ModifTermSet = editor.OrigTermSet;
+    struct termios ModifTermSet = Editor.OrigTermSet;
     ModifTermSet.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
     ModifTermSet.c_oflag &= ~(OPOST);
     ModifTermSet.c_cflag |= (CS8);
@@ -210,6 +228,41 @@ int getWindowSize(int *rows, int *cols) {
     }
 }
 
+// Row Operations ---
+void editorAppendRow(char *s, size_t len) {
+    Editor.row = realloc(Editor.row, sizeof(editorRow) * (Editor.numrows + 1));
+
+    int at = Editor.numrows;    // set 'at' to the index of the new row we want to initialize
+    Editor.row[at].size = len;
+    Editor.row[at].characters = malloc(len + 1);
+    memcpy(Editor.row[at].characters, s, len);  // copy a line of text from 's' to 'Editor.row[at].characters'
+    Editor.row[at].characters[len] = '\0';
+    Editor.numrows++;
+}
+
+// File I/O ---
+void editorOpen(char *filename) {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) die("fopen");
+
+    char *line = NULL;
+    size_t lineCapacity = 0;
+    ssize_t lineLen;    // lineLen uses ssize_t so it can accept negative values (-1)
+
+    // The while loop works because getline() returns -1 when it gets to the end of the file and there are no more lines to read
+    // getline function return line length and store each line from 'fp' to pointer 'line'
+    while ((lineLen = getline(&line, &lineCapacity, fp)) != -1) {
+        // strip off the newline or carriage return at the end of the line before copying it into our erow.
+        // editorRow represents one line of text, so there’s no use storing a newline character at the end of each one.
+        while (lineLen > 0 && (line[lineLen - 1] == '\n' || line[lineLen - 1] == '\r')) {
+            lineLen--;
+        }
+        editorAppendRow(line, lineLen);
+    }
+    free(line);
+    fclose(fp);
+}
+
 // Append Buffer ---
 void abAppend(struct appendBuffer *buffer, const char *s, int length) {
     // resize the memory of buf from struct buffer and store the return at new_buff
@@ -229,8 +282,8 @@ void abFree(struct appendBuffer *buffer) {
 // Output ---
 void editorAddMessage(struct appendBuffer *buffer, char *message, int messageLen) {
     // Add "~", a few spaces, and a message to the buffer to be printed out later. 
-    if (messageLen > editor.screencols) messageLen = editor.screencols;
-    int padding = (editor.screencols - messageLen) / 2;
+    if (messageLen > Editor.screencols) messageLen = Editor.screencols;
+    int padding = (Editor.screencols - messageLen) / 2;
     if (padding) {
         abAppend(buffer, "~", 1);   // add "~" to the buffer
         padding--;
@@ -244,39 +297,45 @@ void editorAddMessage(struct appendBuffer *buffer, char *message, int messageLen
 
 void editorDrawRows(struct appendBuffer *buffer) {
     int y;
-    for(y=0; y < editor.screenrows; y++) {
-        // string placement based on rows
-        if (y == editor.screenrows / 3) {
-        // Sector and Version
-            char sectorVer[50];
-            int sectorVerLen = snprintf(sectorVer, sizeof(sectorVer), "%s %s", SCTR, SCTR_VERSION);
-            // string placement based on columns
-            editorAddMessage(buffer, sectorVer, sectorVerLen);
-        } else if (y == (editor.screenrows / 3) + 2) {
-        // Made by Ellan Aqira
-            char madeBy[50];
-            int madeByLen = snprintf(madeBy, sizeof(madeBy), "%s", MADE_BY);
-            // string placement based on columns
-            editorAddMessage(buffer, madeBy, madeByLen);
-        } else if (y == (editor.screenrows / 3) + 3) {
-        // Sector is open source
-            char isOpenSource[50];
-            int isOpenSourceLen = snprintf(isOpenSource, sizeof(isOpenSource), "%s", SCTR_IS_OPEN_SOURCE);
-            // string placement based on columns
-            editorAddMessage(buffer, isOpenSource, isOpenSourceLen);
-        } else if (y == (editor.screenrows / 3) + 5) {
-        // How to exit
-            char howToExit[50];
-            int howToExitLen = snprintf(howToExit, sizeof(howToExit), "%s", HOW_TO_EXIT);
-            // string placement based on columns
-            editorAddMessage(buffer, howToExit, howToExitLen);
+    for(y=0; y < Editor.screenrows; y++) {
+        if (y >= Editor.numrows) {
+            // string placement based on rows
+            if (Editor.numrows == 0 && y == Editor.screenrows / 3) {
+            // Sector and Version
+                char sectorVer[50];
+                int sectorVerLen = snprintf(sectorVer, sizeof(sectorVer), "%s %s", SCTR, SCTR_VERSION);
+                // string placement based on columns
+                editorAddMessage(buffer, sectorVer, sectorVerLen);
+            } else if (Editor.numrows == 0 && y == (Editor.screenrows / 3) + 2) {
+            // Made by Ellan Aqira
+                char madeBy[50];
+                int madeByLen = snprintf(madeBy, sizeof(madeBy), "%s", MADE_BY);
+                // string placement based on columns
+                editorAddMessage(buffer, madeBy, madeByLen);
+            } else if (Editor.numrows == 0 &&  y == (Editor.screenrows / 3) + 3) {
+            // Sector is open source
+                char isOpenSource[50];
+                int isOpenSourceLen = snprintf(isOpenSource, sizeof(isOpenSource), "%s", SCTR_IS_OPEN_SOURCE);
+                // string placement based on columns
+                editorAddMessage(buffer, isOpenSource, isOpenSourceLen);
+            } else if (Editor.numrows == 0 && y == (Editor.screenrows / 3) + 5) {
+            // How to exit
+                char howToExit[50];
+                int howToExitLen = snprintf(howToExit, sizeof(howToExit), "%s", HOW_TO_EXIT);
+                // string placement based on columns
+                editorAddMessage(buffer, howToExit, howToExitLen);
+            } else {
+                abAppend(buffer, "~", 1);
+            }
         } else {
-            abAppend(buffer, "~", 1);
+            int len = Editor.row[y].size;
+            if (len > Editor.screencols) len = Editor.screencols;
+            abAppend(buffer, Editor.row[y].characters, len);
         }
 
         abAppend(buffer, "\x1b[K", 3);  // erase character from the active position to the end of line
 
-        if (y < editor.screenrows-1) {
+        if (y < Editor.screenrows-1) {
             abAppend(buffer, "\r\n", 2);
         }
     }
@@ -292,7 +351,7 @@ void editorRefreshScreen() {
 
     char buf_cursor[32];
     // set the cursor position to top left corner
-    snprintf(buf_cursor, sizeof(buf_cursor), "\x1b[%d;%dH", editor.cursorY + 1, editor.cursorX + 1);
+    snprintf(buf_cursor, sizeof(buf_cursor), "\x1b[%d;%dH", Editor.cursorY + 1, Editor.cursorX + 1);
     abAppend(&add_buffer, buf_cursor, strlen(buf_cursor));
 
     abAppend(&add_buffer, "\x1b[?25h", 6);  // makes the cursor visible
@@ -305,23 +364,23 @@ void editorRefreshScreen() {
 void editorMoveCursor(int key) {
     switch (key) {
         case ARROW_UP:
-            if (editor.cursorY != 0) {
-                editor.cursorY--;
+            if (Editor.cursorY != 0) {
+                Editor.cursorY--;
             }
             break;
         case ARROW_LEFT:
-            if (editor.cursorX != 0) {
-                editor.cursorX--;
+            if (Editor.cursorX != 0) {
+                Editor.cursorX--;
             }
             break;
         case ARROW_DOWN:
-            if (editor.cursorY != editor.screenrows-1) {
-                editor.cursorY++;
+            if (Editor.cursorY != Editor.screenrows-1) {
+                Editor.cursorY++;
             }
             break;
         case ARROW_RIGHT:
-            if (editor.cursorX != editor.screencols-1) {
-                editor.cursorX++;
+            if (Editor.cursorX != Editor.screencols-1) {
+                Editor.cursorX++;
             }
             break;
     }
@@ -336,16 +395,16 @@ int editorProcessKeypress() {
             break;
 
         case HOME_KEY:
-            editor.cursorX = 0;
+            Editor.cursorX = 0;
             break;
         case END_KEY:
-            editor.cursorX = editor.screencols-1;
+            Editor.cursorX = Editor.screencols-1;
             break;
 
         case PAGE_UP:
         case PAGE_DOWN:
             {
-                int times = editor.screenrows;
+                int times = Editor.screenrows;
                 while(times--) {
                     if (c == PAGE_UP) {
                         editorMoveCursor(ARROW_UP);
@@ -369,8 +428,10 @@ int editorProcessKeypress() {
 
 // Init ---
 void initEditor() {
-    // pass the value of screen rows and cols to editor struct;
-    editor.cursorX = 0;
-    editor.cursorY = 0;
-    if (getWindowSize(&editor.screenrows, &editor.screencols) == -1) die("getWindowSize");
+    // pass the value of screen rows and cols to Editor struct;
+    Editor.cursorX = 0;
+    Editor.cursorY = 0;
+    Editor.numrows = 0;
+    Editor.row = NULL;
+    if (getWindowSize(&Editor.screenrows, &Editor.screencols) == -1) die("getWindowSize");
 }
