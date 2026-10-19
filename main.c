@@ -45,6 +45,8 @@ typedef struct editorRow {
 // Editor Configuration ---
 struct editorConfig {
     int cursorX, cursorY;
+    int rowOffset;
+    int colOffset;
     int screenrows;
     int screencols;
     int numrows;
@@ -76,6 +78,7 @@ void abAppend(struct appendBuffer *buffer, const char *s, int length);
 void abFree(struct appendBuffer *buffer);
 // Output ---
 void editorAddMessage(struct appendBuffer *buffer, char *message, int messageLen);
+void editorScroll();
 void editorDrawRows(struct appendBuffer *buffer);
 void editorRefreshScreen();
 // Input ---
@@ -110,7 +113,7 @@ void die(const char *s) {
 }
 
 void disableRawMode() {
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &Editor.OrigTermSet) == -1) die("tcsetattr");
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &Editor.OrigTermSet) == -1) die("tcsetattr");    // apply the original settings of terminal
 
     write(STDOUT_FILENO, "\x1b[?1049l", 8); // restore cursor position and disable alternative buffer
     printf("row = %d\r\n", Editor.screenrows);
@@ -118,17 +121,20 @@ void disableRawMode() {
 }
 
 void enableRawMode() {
+    // get the current settings of terminal and store it at Editor.OrigTerSet struct
     if (tcgetattr(STDIN_FILENO, &Editor.OrigTermSet) == -1) die("tcgetattr");
 
+    // copy the original terminal settings to ModifTermSet struct
     struct termios ModifTermSet = Editor.OrigTermSet;
+    // change the original settings of terminal through ModifTermSet struct to enable raw mode
     ModifTermSet.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
     ModifTermSet.c_oflag &= ~(OPOST);
     ModifTermSet.c_cflag |= (CS8);
     ModifTermSet.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
     ModifTermSet.c_cc[VMIN] = 0;
     ModifTermSet.c_cc[VTIME] = 1;
-
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &ModifTermSet) == -1) die("tcsetattr");
+ 
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &ModifTermSet) == -1) die("tcsetattr");  // apply the changes to terminal
 
     write(STDOUT_FILENO, "\x1b[?1049h", 8); // save cursor position and enable alternative buffer
 
@@ -195,11 +201,13 @@ int getCursorPosition(int *rows, int *cols) {
     unsigned int i = 0;
     // n = Requests and reports the general status,
     // with parameter 6 to report cursor's active position,
-    // and then send the cursor position to stdin.
+    // and then send the cursor position reply to standard input.
     if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return -1;
 
+    // the reply that stored in standard inpus is an escape sequence
+    // for example, "/x1b 40;141R"
     while (i < sizeof(buff)-1) {
-        // store the cursor position to buff
+        // store the cursor position to buff  without the "R"
         if(read(STDIN_FILENO, &buff[i], 1) != 1) break;
         if(buff[i] == 'R') break;
         i++;
@@ -251,6 +259,7 @@ void editorOpen(char *filename) {
 
     // The while loop works because getline() returns -1 when it gets to the end of the file and there are no more lines to read
     // getline function return line length and store each line from 'fp' to pointer 'line'
+    // Each time the 'getline' function is called, it replaces the line of text in 'line' with a new one.
     while ((lineLen = getline(&line, &lineCapacity, fp)) != -1) {
         // strip off the newline or carriage return at the end of the line before copying it into our erow.
         // editorRow represents one line of text, so there’s no use storing a newline character at the end of each one.
@@ -295,10 +304,31 @@ void editorAddMessage(struct appendBuffer *buffer, char *message, int messageLen
     abAppend(buffer, message, messageLen);  // add the message to the buffer
 }
 
+void editorScroll() {
+    // Handle the scrolling up
+    if (Editor.cursorY < Editor.rowOffset) {
+        Editor.rowOffset = Editor.cursorY;
+    }
+    // Handle the scrolling down
+    if (Editor.cursorY >= Editor.rowOffset + Editor.screenrows) {
+        Editor.rowOffset = (Editor.cursorY - Editor.screenrows) + 1;
+    }
+
+    // Handle the scrolling right
+    if (Editor.cursorX < Editor.colOffset) {
+        Editor.colOffset = Editor.cursorX;
+    }
+    // Handle the scrolling left
+    if (Editor.cursorX >= Editor.colOffset + Editor.screencols) {
+        Editor.colOffset = (Editor.cursorX - Editor.screencols) + 1;
+    }
+}
+
 void editorDrawRows(struct appendBuffer *buffer) {
     int y;
     for(y=0; y < Editor.screenrows; y++) {
-        if (y >= Editor.numrows) {
+        int filerow = y + Editor.rowOffset;
+        if (filerow >= Editor.numrows) {
             // string placement based on rows
             if (Editor.numrows == 0 && y == Editor.screenrows / 3) {
             // Sector and Version
@@ -328,9 +358,10 @@ void editorDrawRows(struct appendBuffer *buffer) {
                 abAppend(buffer, "~", 1);
             }
         } else {
-            int len = Editor.row[y].size;
+            int len = Editor.row[filerow].size - Editor.colOffset;
+            if (len < 0) len = 0;
             if (len > Editor.screencols) len = Editor.screencols;
-            abAppend(buffer, Editor.row[y].characters, len);
+            abAppend(buffer, &Editor.row[filerow].characters[Editor.colOffset], len);
         }
 
         abAppend(buffer, "\x1b[K", 3);  // erase character from the active position to the end of line
@@ -342,6 +373,8 @@ void editorDrawRows(struct appendBuffer *buffer) {
 }
 
 void editorRefreshScreen() {
+    editorScroll();
+
     struct appendBuffer add_buffer = ABUF_INIT; // initialize add_buffer.buf to NULL and add_buffer.len to 0
 
     abAppend(&add_buffer, "\x1b[?25l", 6);  // makes the cursor invisible      
@@ -350,8 +383,8 @@ void editorRefreshScreen() {
     editorDrawRows(&add_buffer);
 
     char buf_cursor[32];
-    // set the cursor position to top left corner
-    snprintf(buf_cursor, sizeof(buf_cursor), "\x1b[%d;%dH", Editor.cursorY + 1, Editor.cursorX + 1);
+    // set the cursor position
+    snprintf(buf_cursor, sizeof(buf_cursor), "\x1b[%d;%dH", (Editor.cursorY - Editor.rowOffset) + 1, (Editor.cursorX - Editor.colOffset) + 1);
     abAppend(&add_buffer, buf_cursor, strlen(buf_cursor));
 
     abAppend(&add_buffer, "\x1b[?25h", 6);  // makes the cursor visible
@@ -362,6 +395,15 @@ void editorRefreshScreen() {
 
 // Input ---
 void editorMoveCursor(int key) {
+    editorRow *currentRow;
+    
+    // check if the cursor's vertical position is outside the existing rows
+    if (Editor.cursorY >= Editor.numrows) {
+        currentRow = NULL;
+    } else {
+        currentRow = &Editor.row[Editor.cursorY];
+    }
+
     switch (key) {
         case ARROW_UP:
             if (Editor.cursorY != 0) {
@@ -374,15 +416,33 @@ void editorMoveCursor(int key) {
             }
             break;
         case ARROW_DOWN:
-            if (Editor.cursorY != Editor.screenrows-1) {
+            if (Editor.cursorY < Editor.numrows) {
                 Editor.cursorY++;
             }
             break;
         case ARROW_RIGHT:
-            if (Editor.cursorX != Editor.screencols-1) {
+            if (currentRow && Editor.cursorX < currentRow->size) {
                 Editor.cursorX++;
             }
             break;
+    }
+
+    // check if the cursor's vertical position is outside the existing rows
+    if (Editor.cursorY >= Editor.numrows) {
+        currentRow = NULL;
+    } else {
+        currentRow = &Editor.row[Editor.cursorY];
+    }
+
+    // prevent the cursor to move past the end of line when moving the cursor
+    // to the end of a long line, then moving it down to the next shorter line
+    int rowlen = 0;
+    if (currentRow != NULL) {
+        rowlen = currentRow->size;
+    }
+
+    if (Editor.cursorX > rowlen) {
+        Editor.cursorX = rowlen;
     }
 }
 int editorProcessKeypress() {
@@ -431,6 +491,8 @@ void initEditor() {
     // pass the value of screen rows and cols to Editor struct;
     Editor.cursorX = 0;
     Editor.cursorY = 0;
+    Editor.rowOffset = 0;
+    Editor.colOffset = 0;
     Editor.numrows = 0;
     Editor.row = NULL;
     if (getWindowSize(&Editor.screenrows, &Editor.screencols) == -1) die("getWindowSize");
