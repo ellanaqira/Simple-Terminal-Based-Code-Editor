@@ -21,8 +21,15 @@
 #define SCTR_IS_OPEN_SOURCE "Sector is open source"
 #define HOW_TO_EXIT "type  :ctrl + q     to exit"
 
+#define TAB_STOP 4
+#define FG_COLOR 97
+#define BG_COLOR 44
+
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define ABUF_INIT {NULL, 0};
+
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
 
 enum editorKey {
 	ARROW_UP = 1000,
@@ -40,7 +47,9 @@ enum editorKey {
 // Editor Row
 typedef struct editorRow {
 	int size;
+	int render_size;
 	char *characters;
+	char *render;
 } editorRow;
 // Editor Configuration ---
 struct editorConfig {
@@ -70,6 +79,7 @@ int editorReadKey();
 int getCursorPosition(int *rows, int *cols);
 int getWindowSize(int *rows, int *cols);
 // Row Operations ---
+void editorUpdateRow(editorRow *row);
 void editorAppendRow(char *s, size_t len);
 // File I/O ---
 void editorOpen(char *filename);
@@ -237,6 +247,38 @@ int getWindowSize(int *rows, int *cols) {
 }
 
 // Row Operations ---
+void editorUpdateRow(editorRow *row) {
+	int num_of_tabs = 0;
+	for (int i=0; i < row->size; i++) {
+		if (row->characters[i] == '\t') {
+			num_of_tabs++;
+		}
+	}
+	
+	free(row->render);
+	// row->size already counts 1 for each tab, so we multiply the number of tabs by (TAB_STOP-1)
+	//and add that to row->size to get the maximum amount of memory we’ll need for the rendered row
+	row->render = malloc(row->size + (num_of_tabs*(TAB_STOP-1)) + 1);
+	
+	int i;
+	int index = 0;
+	for (i=0; i < row->size; i++) {
+		if (row->characters[i] == '\t') {
+			row->render[index] = ' ';
+			index++;
+			while (index % TAB_STOP != 0) {
+				row->render[index] = ' ';
+				index++;
+			}
+		} else {
+			row->render[index] = row->characters[i];
+			index++;
+		}
+	}
+	row->render[index] = '\0';
+	row->render_size = index;
+}
+
 void editorAppendRow(char *s, size_t len) {
 	Editor.row = realloc(Editor.row, sizeof(editorRow) * (Editor.numrows + 1));
 
@@ -245,6 +287,11 @@ void editorAppendRow(char *s, size_t len) {
 	Editor.row[at].characters = malloc(len + 1);
 	memcpy(Editor.row[at].characters, s, len);  // copy a line of text from 's' to 'Editor.row[at].characters'
 	Editor.row[at].characters[len] = '\0';
+
+	Editor.row[at].render_size = 0;
+	Editor.row[at].render = NULL;
+	editorUpdateRow(&Editor.row[at]);
+	
 	Editor.numrows++;
 }
 
@@ -358,10 +405,10 @@ void editorDrawRows(struct appendBuffer *buffer) {
 				abAppend(buffer, "~", 1);
 			}
 		} else {
-			int len = Editor.row[filerow].size - Editor.colOffset;
+			int len = Editor.row[filerow].render_size - Editor.colOffset;
 			if (len < 0) len = 0;
 			if (len > Editor.screencols) len = Editor.screencols;
-			abAppend(buffer, &Editor.row[filerow].characters[Editor.colOffset], len);
+			abAppend(buffer, &Editor.row[filerow].render[Editor.colOffset], len);
 		}
 
 		abAppend(buffer, "\x1b[K", 3);  // erase character from the active position to the end of line
@@ -377,8 +424,9 @@ void editorRefreshScreen() {
 
 	struct appendBuffer add_buffer = ABUF_INIT; // initialize add_buffer.buf to NULL and add_buffer.len to 0
 
-	abAppend(&add_buffer, "\x1b[?25l", 6);  // makes the cursor invisible      
-	abAppend(&add_buffer, "\x1b[H", 3);     // move the cursor to the top-left corner
+	abAppend(&add_buffer, "\x1b[" TOSTRING(FG_COLOR) ";" TOSTRING(BG_COLOR) "m", 9);	// set fg and bg color 
+	abAppend(&add_buffer, "\x1b[?25l", 6);  	// makes the cursor invisible      
+	abAppend(&add_buffer, "\x1b[H", 3);     	// move the cursor to the top-left corner
 
 	editorDrawRows(&add_buffer);
 
