@@ -54,6 +54,7 @@ typedef struct editorRow {
 // Editor Configuration ---
 struct editorConfig {
 	int cursorX, cursorY;
+	int renderX;
 	int rowOffset;
 	int colOffset;
 	int screenrows;
@@ -79,6 +80,7 @@ int editorReadKey();
 int getCursorPosition(int *rows, int *cols);
 int getWindowSize(int *rows, int *cols);
 // Row Operations ---
+int editorRowCxToRx(editorRow *row, int cursorX);
 void editorUpdateRow(editorRow *row);
 void editorAppendRow(char *s, size_t len);
 // File I/O ---
@@ -247,6 +249,19 @@ int getWindowSize(int *rows, int *cols) {
 }
 
 // Row Operations ---
+int editorRowCxToRx(editorRow *row, int cursorX) {
+	int renderX = 0;
+	int j;
+
+	for (j=0; j<cursorX; j++) {
+		if (row->characters[j] == '\t') {
+			renderX += (TAB_STOP - 1) - (renderX % TAB_STOP);
+		}
+		renderX++;
+	}
+	return renderX;
+}
+
 void editorUpdateRow(editorRow *row) {
 	int num_of_tabs = 0;
 	for (int i=0; i < row->size; i++) {
@@ -254,7 +269,7 @@ void editorUpdateRow(editorRow *row) {
 			num_of_tabs++;
 		}
 	}
-	
+
 	free(row->render);
 	// row->size already counts 1 for each tab, so we multiply the number of tabs by (TAB_STOP-1)
 	//and add that to row->size to get the maximum amount of memory we’ll need for the rendered row
@@ -352,22 +367,29 @@ void editorAddMessage(struct appendBuffer *buffer, char *message, int messageLen
 }
 
 void editorScroll() {
+	Editor.renderX = 0;
+
+	if (Editor.cursorY < Editor.numrows) {
+		Editor.renderX = editorRowCxToRx(&Editor.row[Editor.cursorY], Editor.cursorX);
+	}
+
 	// Handle the scrolling up
 	if (Editor.cursorY < Editor.rowOffset) {
 		Editor.rowOffset = Editor.cursorY;
 	}
+
 	// Handle the scrolling down
 	if (Editor.cursorY >= Editor.rowOffset + Editor.screenrows) {
 		Editor.rowOffset = (Editor.cursorY - Editor.screenrows) + 1;
 	}
 
 	// Handle the scrolling right
-	if (Editor.cursorX < Editor.colOffset) {
-		Editor.colOffset = Editor.cursorX;
+	if (Editor.renderX < Editor.colOffset) {
+		Editor.colOffset = Editor.renderX;
 	}
 	// Handle the scrolling left
-	if (Editor.cursorX >= Editor.colOffset + Editor.screencols) {
-		Editor.colOffset = (Editor.cursorX - Editor.screencols) + 1;
+	if (Editor.renderX >= Editor.colOffset + Editor.screencols) {
+		Editor.colOffset = (Editor.renderX - Editor.screencols) + 1;
 	}
 }
 
@@ -432,7 +454,7 @@ void editorRefreshScreen() {
 
 	char buf_cursor[32];
 	// set the cursor position
-	snprintf(buf_cursor, sizeof(buf_cursor), "\x1b[%d;%dH", (Editor.cursorY - Editor.rowOffset) + 1, (Editor.cursorX - Editor.colOffset) + 1);
+	snprintf(buf_cursor, sizeof(buf_cursor), "\x1b[%d;%dH", (Editor.cursorY - Editor.rowOffset) + 1, (Editor.renderX - Editor.colOffset) + 1);
 	abAppend(&add_buffer, buf_cursor, strlen(buf_cursor));
 
 	abAppend(&add_buffer, "\x1b[?25h", 6);  // makes the cursor visible
@@ -547,6 +569,7 @@ void initEditor() {
 	// pass the value of screen rows and cols to Editor struct;
 	Editor.cursorX = 0;
 	Editor.cursorY = 0;
+	Editor.renderX = 0;
 	Editor.rowOffset = 0;
 	Editor.colOffset = 0;
 	Editor.numrows = 0;
