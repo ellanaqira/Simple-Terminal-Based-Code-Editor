@@ -16,7 +16,7 @@
 
 /*** Defines ***/
 #define SCTR_VERSION "0.0.1"
-#define SCTR "Sector -- version"
+#define SCTR "Ssector - version"
 #define MADE_BY "Made by Ellan Aqira"
 #define SCTR_IS_OPEN_SOURCE "Sector is open source"
 #define HOW_TO_EXIT "type  :ctrl + q     to exit"
@@ -60,7 +60,7 @@ struct editorConfig {
 	int screenrows;
 	int screencols;
 	int numrows;
-	editorRow *row;  // 'Editor.row' is an array of 'editorRow' 
+	editorRow *row;  // 'Editor.row' is an array of 'editorRow'
 	struct termios OrigTermSet;
 };
 struct editorConfig Editor;
@@ -536,17 +536,24 @@ int editorProcessKeypress() {
 			Editor.cursorX = 0;
 			break;
 		case END_KEY:
-			Editor.cursorX = Editor.screencols-1;
+			Editor.cursorX = Editor.row[Editor.cursorY].size;
 			break;
 
 		case PAGE_UP:
 		case PAGE_DOWN:
 			{
+				if (c == PAGE_UP) {
+					Editor.cursorY = Editor.rowOffset;
+				} else if (c == PAGE_DOWN) {
+					Editor.cursorY = Editor.rowOffset + Editor.screenrows - 1;
+					if (Editor.cursorY > Editor.numrows) Editor.cursorY = Editor.numrows;
+				}
+
 				int times = Editor.screenrows;
-				while(times--) {
+				while (times--) {
 					if (c == PAGE_UP) {
 						editorMoveCursor(ARROW_UP);
-					} else {
+					} else if (c == PAGE_DOWN) {
 						editorMoveCursor(ARROW_DOWN);
 					}
 				}
