@@ -21,15 +21,63 @@
 #define SCTR_IS_OPEN_SOURCE "Sector is open source"
 #define HOW_TO_EXIT "type  :ctrl + q     to exit"
 
-#define TAB_STOP 4
-#define FG_COLOR 97
-#define BG_COLOR 44
+// fg colors ---
+#define FG_DEFAULT			39
+#define FG_BLACK			30
+#define FG_RED				31
+#define FG_GREEN			32
+#define FG_YELLOW			33
+#define FG_BLUE				34
+#define FG_MAGENTA			35
+#define FG_CYAN				36
+#define FG_LIGHT_GRAY		37
+#define FG_DARK_GRAY		90
+#define FG_LIGHT_RED		91
+#define FG_LIGHT_GREEN		92
+#define FG_LIGHT_YELLOW		93
+#define FG_LIGHT_BLUE		94
+#define FG_LIGHT_MAGENTA	95
+#define FG_LIGHT_CYAN		96
+#define FG_WHITE			97
 
-#define CTRL_KEY(k) ((k) & 0x1f)
-#define ABUF_INIT {NULL, 0};
+// bg colors ---
+#define BG_DEFAULT			49
+#define BG_BLACK			40
+#define BG_RED				41
+#define BG_GREEN			42
+#define BG_YELLOW			43
+#define BG_BLUE				44
+#define BG_MAGENTA			45
+#define BG_CYAN				46
+#define BG_LIGHT_GRAY		47
+#define BG_DARK_GRAY		100
+#define BG_LIGHT_RED		101
+#define BG_LIGHT_GREEN		102
+#define BG_LIGHT_YELLOW		103
+#define BG_LIGHT_BLUE		104
+#define BG_LIGHT_MAGENTA	105
+#define BG_LIGHT_CYAN		106
+#define BG_WHITE			107
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
+
+// --------- [appearance] ---------
+#define TAB_STOP 4
+
+#define FG_EDITOR_COLOR TOSTRING(FG_WHITE)
+#define BG_EDITOR_COLOR TOSTRING(BG_BLUE)
+
+#define FG_LEFT_BORDER_COLOR TOSTRING(FG_LIGHT_YELLOW)
+#define BG_LEFT_BORDER_COLOR TOSTRING(BG_BLUE)
+
+#define FG_STATUS_BAR_COLOR TOSTRING(FG_BLUE)
+#define BG_STATUS_BAR_COLOR TOSTRING(BG_CYAN)
+// --------------------------------
+
+#define CTRL_KEY(k) ((k) & 0x1f)
+#define ABUF_INIT {NULL, 0};
+#define EXTENSION_BUFFER_SIZE 32
 
 enum editorKey {
 	ARROW_UP = 1000,
@@ -61,6 +109,7 @@ struct editorConfig {
 	int screencols;
 	int numrows;
 	editorRow *row;  // 'Editor.row' is an array of 'editorRow'
+	char *filename;
 	struct termios OrigTermSet;
 };
 struct editorConfig Editor;
@@ -84,7 +133,7 @@ int editorRowCxToRx(editorRow *row, int cursorX);
 void editorUpdateRow(editorRow *row);
 void editorAppendRow(char *s, size_t len);
 // File I/O ---
-void editorOpen(char *filename);
+void editorOpen(char *name_of_the_file);
 // Append Buffer ---
 void abAppend(struct appendBuffer *buffer, const char *s, int length);
 void abFree(struct appendBuffer *buffer);
@@ -92,6 +141,7 @@ void abFree(struct appendBuffer *buffer);
 void editorAddMessage(struct appendBuffer *buffer, char *message, int messageLen);
 void editorScroll();
 void editorDrawRows(struct appendBuffer *buffer);
+void editorDrawStatusBar(struct appendBuffer *buffer);
 void editorRefreshScreen();
 // Input ---
 void editorMoveCursor(int key);
@@ -311,8 +361,11 @@ void editorAppendRow(char *s, size_t len) {
 }
 
 // File I/O ---
-void editorOpen(char *filename) {
-	FILE *fp = fopen(filename, "r");
+void editorOpen(char *name_of_the_file) {
+	free(Editor.filename);
+	Editor.filename = strdup(name_of_the_file);
+	
+	FILE *fp = fopen(name_of_the_file, "r");
 	if (!fp) die("fopen");
 
 	char *line = NULL;
@@ -356,14 +409,19 @@ void editorAddMessage(struct appendBuffer *buffer, char *message, int messageLen
 	if (messageLen > Editor.screencols) messageLen = Editor.screencols;
 	int padding = (Editor.screencols - messageLen) / 2;
 	if (padding) {
-		abAppend(buffer, "~", 1);   // add "~" to the buffer
+		abAppend(buffer, "\x1b[" FG_LEFT_BORDER_COLOR ";" BG_LEFT_BORDER_COLOR "m" , 9);
+		abAppend(buffer, "║", 3);
+		abAppend(buffer, "\x1b[m", 3);
+		abAppend(buffer, "\x1b[" FG_EDITOR_COLOR  ";" BG_EDITOR_COLOR "m", 9);	// set fg and bg color 
+		abAppend(buffer, "~", 1);
+
 		padding--;
 	}
 	while(padding != 0) {
-		abAppend(buffer, " ", 1);   // add some spaces to buffer
+		abAppend(buffer, " ", 1);
 		padding--;
 	}
-	abAppend(buffer, message, messageLen);  // add the message to the buffer
+	abAppend(buffer, message, messageLen);
 }
 
 void editorScroll() {
@@ -424,21 +482,92 @@ void editorDrawRows(struct appendBuffer *buffer) {
 				// string placement based on columns
 				editorAddMessage(buffer, howToExit, howToExitLen);
 			} else {
+				abAppend(buffer, "\x1b[" FG_LEFT_BORDER_COLOR ";" BG_LEFT_BORDER_COLOR "m" , 9);
+				abAppend(buffer, "║", 3);
+				abAppend(buffer, "\x1b[m", 3);
+				abAppend(buffer, "\x1b[" FG_EDITOR_COLOR  ";" BG_EDITOR_COLOR "m", 9);	// set fg and bg color 
 				abAppend(buffer, "~", 1);
 			}
 		} else {
 			int len = Editor.row[filerow].render_size - Editor.colOffset;
 			if (len < 0) len = 0;
 			if (len > Editor.screencols) len = Editor.screencols;
+			abAppend(buffer, "\x1b[" FG_LEFT_BORDER_COLOR ";" BG_LEFT_BORDER_COLOR "m" , 9);
+			abAppend(buffer, "║" , 3);
+			abAppend(buffer, "\x1b[m", 3);
+			abAppend(buffer, "\x1b[" FG_EDITOR_COLOR  ";" BG_EDITOR_COLOR "m", 9);	// set fg and bg color 
 			abAppend(buffer, &Editor.row[filerow].render[Editor.colOffset], len);
 		}
 
 		abAppend(buffer, "\x1b[K", 3);  // erase character from the active position to the end of line
 
-		if (y < Editor.screenrows-1) {
-			abAppend(buffer, "\r\n", 2);
+		abAppend(buffer, "\r\n", 2);
+	}
+}
+
+void editorDrawStatusBar(struct appendBuffer *buffer) {
+	abAppend(buffer, "\x1b[" FG_STATUS_BAR_COLOR ";" BG_STATUS_BAR_COLOR "m", 9);
+
+	char file_status[80], row_status[80];
+	int maxlen_of_file_name = 20;
+	size_t filename_len = 0;
+	int len = 0;
+	int rowlen = 0;
+
+	char filetype[EXTENSION_BUFFER_SIZE];
+	int index_filetype = 0;
+
+	if (Editor.filename != NULL) {
+		filename_len = strlen(Editor.filename);	
+
+		 for (int i=0; i<(int)filename_len; i++) {
+		 		if (Editor.filename[i] == '.') {
+		 			while (i<(int)filename_len) {
+		 				filetype[index_filetype] = Editor.filename[i];
+		 				i++;
+		 				index_filetype++;
+		 			}
+		 		}
+		 	}
+		 filetype[index_filetype] = '\0';
+	}
+
+	#define len_visible 14
+	if (Editor.filename) {
+		if ((int)filename_len <= maxlen_of_file_name) {
+			len = snprintf(file_status, sizeof(file_status), " %.20s - %d line(s)", Editor.filename, Editor.numrows);
+			rowlen = snprintf(row_status, sizeof(row_status), "%d/%d ", Editor.cursorY + 1, Editor.numrows);
+		} else {
+			// determining the appropriate length for displaying a filename
+			// so that the total number of characters shown based on the
+			// format: "%.*s..%s", is equals exactly 20
+			int num_of_periods = 2;
+			if (index_filetype >= maxlen_of_file_name) {
+				len = snprintf(file_status, sizeof(file_status), " %.17s... - %d line(s)", Editor.filename, Editor.numrows);
+				rowlen = snprintf(row_status, sizeof(row_status), "%d/%d ", Editor.cursorY + 1, Editor.numrows);
+			} else {
+				int len_visible_filename = maxlen_of_file_name - num_of_periods  - index_filetype;
+				len = snprintf(file_status, sizeof(file_status), " %.*s..%s - %d line(s)", len_visible_filename, Editor.filename, filetype, Editor.numrows);
+				rowlen = snprintf(row_status, sizeof(row_status), "%d/%d ", Editor.cursorY + 1, Editor.numrows);
+			}
+		}
+	} else {
+		len = snprintf(file_status, sizeof(file_status), " %.20s - %d line(s)", "[No Name]", Editor.numrows);
+		rowlen = snprintf(row_status, sizeof(row_status), "%d/%d ", Editor.cursorY + 1, Editor.numrows);
+	}
+	
+	if (len > Editor.screencols) len = Editor.screencols;
+	abAppend(buffer, file_status, len);
+	while (len < Editor.screencols+1) {
+		if (((Editor.screencols+1) - len) == rowlen) {
+			abAppend(buffer, row_status, rowlen);
+			break;
+		} else {
+			abAppend(buffer, " ", 1);
+			len++;
 		}
 	}
+	abAppend(buffer, "\x1b[m", 3);
 }
 
 void editorRefreshScreen() {
@@ -446,15 +575,15 @@ void editorRefreshScreen() {
 
 	struct appendBuffer add_buffer = ABUF_INIT; // initialize add_buffer.buf to NULL and add_buffer.len to 0
 
-	abAppend(&add_buffer, "\x1b[" TOSTRING(FG_COLOR) ";" TOSTRING(BG_COLOR) "m", 9);	// set fg and bg color 
 	abAppend(&add_buffer, "\x1b[?25l", 6);  	// makes the cursor invisible      
 	abAppend(&add_buffer, "\x1b[H", 3);     	// move the cursor to the top-left corner
 
 	editorDrawRows(&add_buffer);
+	editorDrawStatusBar(&add_buffer);
 
 	char buf_cursor[32];
 	// set the cursor position
-	snprintf(buf_cursor, sizeof(buf_cursor), "\x1b[%d;%dH", (Editor.cursorY - Editor.rowOffset) + 1, (Editor.renderX - Editor.colOffset) + 1);
+	snprintf(buf_cursor, sizeof(buf_cursor), "\x1b[%d;%dH", (Editor.cursorY - Editor.rowOffset) + 1, (Editor.renderX - Editor.colOffset) + 2);
 	abAppend(&add_buffer, buf_cursor, strlen(buf_cursor));
 
 	abAppend(&add_buffer, "\x1b[?25h", 6);  // makes the cursor visible
@@ -581,5 +710,9 @@ void initEditor() {
 	Editor.colOffset = 0;
 	Editor.numrows = 0;
 	Editor.row = NULL;
+	Editor.filename = NULL;
+	
 	if (getWindowSize(&Editor.screenrows, &Editor.screencols) == -1) die("getWindowSize");
+	Editor.screenrows -= 1;
+	Editor.screencols -= 1;
 }
