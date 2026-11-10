@@ -7,10 +7,12 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 
@@ -65,8 +67,8 @@
 // --------- [appearance] ---------
 #define TAB_STOP 4
 
-#define FG_EDITOR_COLOR TOSTRING(FG_BLACK)
-#define BG_EDITOR_COLOR TOSTRING(BG_WHITE)
+#define FG_EDITOR_COLOR TOSTRING(FG_LIGHT_CYAN)
+#define BG_EDITOR_COLOR TOSTRING(BG_BLUE)
 
 #define LEFT_BORDER "▍"
 #define FG_LEFT_BORDER_COLOR TOSTRING(FG_LIGHT_YELLOW)
@@ -119,8 +121,10 @@ struct editorConfig {
 	int screenrows;
 	int screencols;
 	int numrows;
-	editorRow *row;  // 'Editor.row' is an array of 'editorRow'
+	editorRow *row;
 	char *filename;
+	char status_msg[80];
+	time_t status_msg_time;
 	struct termios OrigTermSet;
 };
 struct editorConfig Editor;
@@ -153,7 +157,9 @@ void editorAddMessage(struct appendBuffer *buffer, char *message, int messageLen
 void editorScroll();
 void editorDrawRows(struct appendBuffer *buffer);
 void editorDrawStatusBar(struct appendBuffer *buffer);
+void editorDrawMessageBar(struct appendBuffer *buffer);
 void editorRefreshScreen();
+void editorSetStatusMessage(const char *fmt, ...);
 // Input ---
 void editorMoveCursor(int key);
 int editorProcessKeypress();
@@ -161,13 +167,14 @@ int editorProcessKeypress();
 void initEditor();
 
 
-/*** Main ***/
 int main(int argc, char *argv[]) {
 	enableRawMode();
 	initEditor();
 	if (argc >= 2) {
 		editorOpen(argv[1]);
 	}
+
+	editorSetStatusMessage("HELP: Ctrl+Q = quit");
 
 	while (1) {
 		editorRefreshScreen();
@@ -189,7 +196,7 @@ void disableRawMode() {
 	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &Editor.OrigTermSet) == -1) die("tcsetattr");    // apply the original settings of terminal
 
 	write(STDOUT_FILENO, "\x1b[?1049l", 8); // restore cursor position and disable alternative buffer
-	printf("row = %d + 1 = %d\r\n", Editor.screenrows, Editor.screenrows + 1);
+	printf("row = %d + 3 = %d\r\n", Editor.screenrows, Editor.screenrows + 3);
 	printf("col = %d + 1 = %d\r\n", Editor.screencols, Editor.screencols + 1);
 }
 
@@ -581,6 +588,17 @@ void editorDrawStatusBar(struct appendBuffer *buffer) {
 		}
 	}
 	abAppend(buffer, "\x1b[m", 3);
+	abAppend(buffer, "\r\n", 2);
+}
+
+void editorDrawMessageBar(struct appendBuffer *buffer) {
+	abAppend(buffer, "\x1b[K", 3);
+	abAppend(buffer, " ", 1);
+	int message_len = strlen(Editor.status_msg);
+	if (message_len > Editor.screencols) message_len = Editor.screencols;
+	if (message_len && time(NULL) - Editor.status_msg_time < 5) {
+		abAppend(buffer, Editor.status_msg, message_len);
+	}
 }
 
 void editorRefreshScreen() {
@@ -593,6 +611,7 @@ void editorRefreshScreen() {
 
 	editorDrawRows(&add_buffer);
 	editorDrawStatusBar(&add_buffer);
+	editorDrawMessageBar(&add_buffer);
 
 	char buf_cursor[32];
 	// set the cursor position
@@ -603,6 +622,14 @@ void editorRefreshScreen() {
 
 	write(STDOUT_FILENO, add_buffer.buf, add_buffer.len);   // write all stored character at buf to the screen
 	abFree(&add_buffer);
+}
+
+void editorSetStatusMessage(const char *fmt, ...) {
+	va_list arg_ptr;
+	va_start(arg_ptr, fmt);
+	vsnprintf(Editor.status_msg, sizeof(Editor.status_msg), fmt, arg_ptr);
+	va_end(arg_ptr);
+	Editor.status_msg_time = time(NULL);
 }
 
 // Input ---
@@ -724,8 +751,10 @@ void initEditor() {
 	Editor.numrows = 0;
 	Editor.row = NULL;
 	Editor.filename = NULL;
+	Editor.status_msg[0] = '\0';
+	Editor.status_msg_time = 0;
 	
 	if (getWindowSize(&Editor.screenrows, &Editor.screencols) == -1) die("getWindowSize");
-	Editor.screenrows -= 2;
+	Editor.screenrows -= 3;
 	Editor.screencols -= 1;
 }
