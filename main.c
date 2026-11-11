@@ -86,6 +86,12 @@
 #define BG_STATUS_BAR_COLOR TOSTRING(BG_CYAN)
 #define FG_ROW_STATUS_COLOR TOSTRING(FG_WHITE)
 #define BG_ROW_STATUS_COLOR TOSTRING(BG_RED)
+
+#define FG_STATUS_MSG_COLOR TOSTRING(FG_BLACK)
+#define BG_STATUS_MSG_COLOR TOSTRING(BG_WHITE)
+#define STATUS_MSG_END_BORDER "🭡"
+#define FG_STATUS_MSG_END_BORDER_COLOR TOSTRING(FG_WHITE)
+#define BG_STATUS_MSG_END_BORDER_COLOR TOSTRING(BG_BLACK)
 // --------------------------------
 
 #define CTRL_KEY(k) ((k) & 0x1f)
@@ -593,12 +599,16 @@ void editorDrawStatusBar(struct appendBuffer *buffer) {
 
 void editorDrawMessageBar(struct appendBuffer *buffer) {
 	abAppend(buffer, "\x1b[K", 3);
+	abAppend(buffer, "\x1b[" FG_STATUS_MSG_COLOR ";" BG_STATUS_MSG_COLOR "m", 9);
 	abAppend(buffer, " ", 1);
 	int message_len = strlen(Editor.status_msg);
 	if (message_len > Editor.screencols) message_len = Editor.screencols;
 	if (message_len && time(NULL) - Editor.status_msg_time < 5) {
 		abAppend(buffer, Editor.status_msg, message_len);
 	}
+	abAppend(buffer, "\x1b[" FG_STATUS_MSG_END_BORDER_COLOR ";" BG_STATUS_MSG_END_BORDER_COLOR "m", 9);
+	abAppend(buffer, "" STATUS_MSG_END_BORDER "", 4);
+	abAppend(buffer, "\x1b[m", 3);
 }
 
 void editorRefreshScreen() {
