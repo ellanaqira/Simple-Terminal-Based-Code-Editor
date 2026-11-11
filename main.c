@@ -74,13 +74,13 @@
 #define FG_LEFT_BORDER_COLOR TOSTRING(FG_LIGHT_YELLOW)
 #define BG_LEFT_BORDER_COLOR TOSTRING(BG_BLUE)
 
-#define BOTTOM_BORDER "▂"
-#define FG_BOTTOM_BORDER_COLOR TOSTRING(FG_LIGHT_YELLOW)
-#define BG_BOTTOM_BORDER_COLOR TOSTRING(BG_BLUE)
-
 #define BOTTOM_LEFT_CORNER "🭎"
 #define FG_BOTTOM_LEFT_CORNER_COLOR TOSTRING(FG_LIGHT_YELLOW)
 #define BG_BOTTOM_LEFT_CORNER_COLOR TOSTRING(BG_BLUE)
+
+#define BOTTOM_BORDER "▂"
+#define FG_BOTTOM_BORDER_COLOR TOSTRING(FG_LIGHT_YELLOW)
+#define BG_BOTTOM_BORDER_COLOR TOSTRING(BG_BLUE)
 
 #define FG_STATUS_BAR_COLOR TOSTRING(FG_BLUE)
 #define BG_STATUS_BAR_COLOR TOSTRING(BG_CYAN)
@@ -96,7 +96,6 @@
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define ABUF_INIT {NULL, 0};
-#define EXTENSION_BUFFER_SIZE 32
 
 enum editorKey {
 	ARROW_UP = 1000,
@@ -129,6 +128,7 @@ struct editorConfig {
 	int numrows;
 	editorRow *row;
 	char *filename;
+	char filetype[32];
 	char status_msg[80];
 	time_t status_msg_time;
 	struct termios OrigTermSet;
@@ -434,7 +434,7 @@ void editorAddMessage(struct appendBuffer *buffer, char *message, int messageLen
 	int padding = (Editor.screencols - messageLen) / 2;
 	if (padding) {
 		abAppend(buffer, "\x1b[" FG_LEFT_BORDER_COLOR ";" BG_LEFT_BORDER_COLOR "m" , 9);
-		abAppend(buffer, ""LEFT_BORDER"", 3);
+		abAppend(buffer, ""LEFT_BORDER"", sizeof(LEFT_BORDER));
 		abAppend(buffer, "\x1b[m", 3);
 		abAppend(buffer, "\x1b[" FG_EDITOR_COLOR  ";" BG_EDITOR_COLOR "m", 9);	// set fg and bg color 
 		abAppend(buffer, "~", 1);
@@ -498,7 +498,7 @@ void editorDrawRows(struct appendBuffer *buffer) {
 				editorAddMessage(buffer, howToExit, howToExitLen);
 			} else {
 				abAppend(buffer, "\x1b[" FG_LEFT_BORDER_COLOR ";" BG_LEFT_BORDER_COLOR "m" , 9);
-				abAppend(buffer, ""LEFT_BORDER"", 3);
+				abAppend(buffer, ""LEFT_BORDER"", sizeof(LEFT_BORDER));
 				abAppend(buffer, "\x1b[m", 3);
 				abAppend(buffer, "\x1b[" FG_EDITOR_COLOR  ";" BG_EDITOR_COLOR "m", 9);	// set fg and bg color 
 				abAppend(buffer, "~", 1);
@@ -508,7 +508,7 @@ void editorDrawRows(struct appendBuffer *buffer) {
 			if (len < 0) len = 0;
 			if (len > Editor.screencols) len = Editor.screencols;
 			abAppend(buffer, "\x1b[" FG_LEFT_BORDER_COLOR ";" BG_LEFT_BORDER_COLOR "m" , 9);
-			abAppend(buffer, ""LEFT_BORDER"", 3);
+			abAppend(buffer, ""LEFT_BORDER"", sizeof(LEFT_BORDER));
 			abAppend(buffer, "\x1b[m", 3);
 			abAppend(buffer, "\x1b[" FG_EDITOR_COLOR  ";" BG_EDITOR_COLOR "m", 9);	// set fg and bg color 
 			abAppend(buffer, &Editor.row[filerow].render[Editor.colOffset], len);
@@ -528,7 +528,6 @@ void editorDrawStatusBar(struct appendBuffer *buffer) {
 	int bottom_border_len = 0;
 	int rowlen = 0;
 
-	char filetype[EXTENSION_BUFFER_SIZE];
 	int index_filetype = 0;
 
 	if (Editor.filename != NULL) {
@@ -537,16 +536,15 @@ void editorDrawStatusBar(struct appendBuffer *buffer) {
 		 for (int i=0; i<(int)filename_len; i++) {
 		 		if (Editor.filename[i] == '.') {
 		 			while (i<(int)filename_len) {
-		 				filetype[index_filetype] = Editor.filename[i];
+		 				Editor.filetype[index_filetype] = Editor.filename[i];
 		 				i++;
 		 				index_filetype++;
 		 			}
 		 		}
 		 	}
-		 filetype[index_filetype] = '\0';
+		 Editor.filetype[index_filetype] = '\0';
 	}
 
-	#define len_visible 14
 	if (Editor.filename) {
 		if ((int)filename_len <= maxlen_of_file_name) {
 			len = snprintf(file_status, sizeof(file_status), " %.20s - %d line(s)", Editor.filename, Editor.numrows);
@@ -561,7 +559,7 @@ void editorDrawStatusBar(struct appendBuffer *buffer) {
 				rowlen = snprintf(row_status, sizeof(row_status), " %d/%d ", Editor.cursorY + 1, Editor.numrows);
 			} else {
 				int len_visible_filename = maxlen_of_file_name - num_of_periods  - index_filetype;
-				len = snprintf(file_status, sizeof(file_status), " %.*s..%s - %d line(s)", len_visible_filename, Editor.filename, filetype, Editor.numrows);
+				len = snprintf(file_status, sizeof(file_status), " %.*s..%s - %d line(s)", len_visible_filename, Editor.filename, Editor.filetype, Editor.numrows);
 				rowlen = snprintf(row_status, sizeof(row_status), " %d/%d ", Editor.cursorY + 1, Editor.numrows);
 			}
 		}
@@ -572,11 +570,11 @@ void editorDrawStatusBar(struct appendBuffer *buffer) {
 	
 	if (len > Editor.screencols) len = Editor.screencols;
 	abAppend(buffer, "\x1b[" FG_BOTTOM_LEFT_CORNER_COLOR ";" BG_BOTTOM_LEFT_CORNER_COLOR "m", 9);
-	abAppend(buffer, "" BOTTOM_LEFT_CORNER "", 4);
+	abAppend(buffer, "" BOTTOM_LEFT_CORNER "", sizeof(BOTTOM_LEFT_CORNER));
 	
 	abAppend(buffer, "\x1b[" FG_BOTTOM_BORDER_COLOR ";" BG_BOTTOM_BORDER_COLOR "m", 9);
 	while (bottom_border_len < (Editor.screencols)) {
-		abAppend(buffer, "" BOTTOM_BORDER  "", 3);
+		abAppend(buffer, "" BOTTOM_BORDER  "", sizeof(BOTTOM_BORDER));
 		bottom_border_len++;
 	}
 	abAppend(buffer, "\r\n", 2);
@@ -607,7 +605,7 @@ void editorDrawMessageBar(struct appendBuffer *buffer) {
 		abAppend(buffer, Editor.status_msg, message_len);
 	}
 	abAppend(buffer, "\x1b[" FG_STATUS_MSG_END_BORDER_COLOR ";" BG_STATUS_MSG_END_BORDER_COLOR "m", 9);
-	abAppend(buffer, "" STATUS_MSG_END_BORDER "", 4);
+	abAppend(buffer, "" STATUS_MSG_END_BORDER "", sizeof(STATUS_MSG_END_BORDER));
 	abAppend(buffer, "\x1b[m", 3);
 }
 
@@ -761,6 +759,7 @@ void initEditor() {
 	Editor.numrows = 0;
 	Editor.row = NULL;
 	Editor.filename = NULL;
+	Editor.filetype[0] = '\0';
 	Editor.status_msg[0] = '\0';
 	Editor.status_msg_time = 0;
 	
