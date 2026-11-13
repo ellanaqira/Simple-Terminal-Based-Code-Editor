@@ -17,10 +17,10 @@
 
 
 /*** Defines ***/
-#define SCTR_VERSION "0.0.1"
-#define SCTR "Ssector - version"
+#define SSCTR_VERSION "0.0.1"
+#define SSCTR "SSECTOR -- Super Simple Code Editor"
 #define MADE_BY "Made by Ellan Aqira"
-#define SCTR_IS_OPEN_SOURCE "Sector is open source"
+#define SSCTR_IS_OPEN_SOURCE "Ssector is  open source"
 #define HOW_TO_EXIT "type  :ctrl + q     to exit"
 
 // fg colors ---
@@ -96,6 +96,7 @@
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define ABUF_INIT {NULL, 0};
+#define WELCOME_MSG_MAXBUF 64
 
 enum editorKey {
 	ARROW_UP = 1000,
@@ -481,19 +482,23 @@ void editorDrawRows(struct appendBuffer *buffer) {
 		int filerow = y + Editor.rowOffset;
 		if (filerow >= Editor.numrows) {
 			if (Editor.numrows == 0 && y == Editor.screenrows / 3) {
-				char sectorVer[50];
-				int sectorVerLen = snprintf(sectorVer, sizeof(sectorVer), "%s %s", SCTR, SCTR_VERSION);
-				editorAddMessage(buffer, sectorVer, sectorVerLen);
-			} else if (Editor.numrows == 0 && y == (Editor.screenrows / 3) + 2) {
-				char madeBy[50];
+				char ssector[WELCOME_MSG_MAXBUF];
+				int ssectorLen = snprintf(ssector, sizeof(ssector), "%s", SSCTR);
+				editorAddMessage(buffer, ssector, ssectorLen);
+			} else if (Editor.numrows == 0 && y == (Editor.screenrows / 3) + 2)	{
+				char version[WELCOME_MSG_MAXBUF];
+				int versionLen = snprintf(version, sizeof(version), "version %s", SSCTR_VERSION);
+				editorAddMessage(buffer, version, versionLen);
+			} else if (Editor.numrows == 0 && y == (Editor.screenrows / 3) + 3) {
+				char madeBy[WELCOME_MSG_MAXBUF];
 				int madeByLen = snprintf(madeBy, sizeof(madeBy), "%s", MADE_BY);
 				editorAddMessage(buffer, madeBy, madeByLen);
-			} else if (Editor.numrows == 0 &&  y == (Editor.screenrows / 3) + 3) {
-				char isOpenSource[50];
-				int isOpenSourceLen = snprintf(isOpenSource, sizeof(isOpenSource), "%s", SCTR_IS_OPEN_SOURCE);
+			} else if (Editor.numrows == 0 &&  y == (Editor.screenrows / 3) + 4) {
+				char isOpenSource[WELCOME_MSG_MAXBUF];
+				int isOpenSourceLen = snprintf(isOpenSource, sizeof(isOpenSource), "%s", SSCTR_IS_OPEN_SOURCE);
 				editorAddMessage(buffer, isOpenSource, isOpenSourceLen);
-			} else if (Editor.numrows == 0 && y == (Editor.screenrows / 3) + 5) {
-				char howToExit[50];
+			} else if (Editor.numrows == 0 && y == (Editor.screenrows / 3) + 6) {
+				char howToExit[WELCOME_MSG_MAXBUF];
 				int howToExitLen = snprintf(howToExit, sizeof(howToExit), "%s", HOW_TO_EXIT);
 				editorAddMessage(buffer, howToExit, howToExitLen);
 			} else {

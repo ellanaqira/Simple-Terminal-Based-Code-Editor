@@ -1,3 +1,3 @@
 main: main.c
-		$(CC) main.c -o sctr -Wall -Wall -Wextra -pedantic -std=c99
-		./sctr
+		$(CC) main.c -o ssctr -Wall -Wall -Wextra -pedantic -std=c99
+		./ssctr
