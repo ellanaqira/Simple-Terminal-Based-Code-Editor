@@ -70,15 +70,23 @@
 #define FG_EDITOR_COLOR TOSTRING(FG_LIGHT_CYAN)
 #define BG_EDITOR_COLOR TOSTRING(BG_BLUE)
 
-#define LEFT_BORDER "▍"
+#define TOP_LEFT_CORNER "╔"
+#define FG_TOP_LEFT_CORNER_COLOR TOSTRING(FG_LIGHT_YELLOW)
+#define BG_TOP_LEFT_CORNER_COLOR TOSTRING(BG_BLUE)
+
+#define TOP_BORDER "─"
+#define FG_TOP_BORDER_COLOR TOSTRING(FG_LIGHT_YELLOW)
+#define BG_TOP_BORDER_COLOR TOSTRING(BG_BLUE)
+
+#define LEFT_BORDER "│"
 #define FG_LEFT_BORDER_COLOR TOSTRING(FG_LIGHT_YELLOW)
 #define BG_LEFT_BORDER_COLOR TOSTRING(BG_BLUE)
 
-#define BOTTOM_LEFT_CORNER "🭎"
+#define BOTTOM_LEFT_CORNER "╚"
 #define FG_BOTTOM_LEFT_CORNER_COLOR TOSTRING(FG_LIGHT_YELLOW)
 #define BG_BOTTOM_LEFT_CORNER_COLOR TOSTRING(BG_BLUE)
 
-#define BOTTOM_BORDER "▂"
+#define BOTTOM_BORDER "─"
 #define FG_BOTTOM_BORDER_COLOR TOSTRING(FG_LIGHT_YELLOW)
 #define BG_BOTTOM_BORDER_COLOR TOSTRING(BG_BLUE)
 
@@ -89,9 +97,13 @@
 
 #define FG_STATUS_MSG_COLOR TOSTRING(FG_BLACK)
 #define BG_STATUS_MSG_COLOR TOSTRING(BG_WHITE)
-#define STATUS_MSG_END_BORDER "🭡"
-#define FG_STATUS_MSG_END_BORDER_COLOR TOSTRING(FG_WHITE)
-#define BG_STATUS_MSG_END_BORDER_COLOR TOSTRING(BG_BLACK)
+
+#define STATUS_MSG_LEFT_BORDER "╰═["
+#define FG_STATUS_MSG_LEFT_BORDER_COLOR TOSTRING(FG_WHITE)
+#define BG_STATUS_MSG_LEFT_BORDER_COLOR TOSTRING(BG_BLACK)
+#define STATUS_MSG_RIGHT_BORDER "]═╯"
+#define FG_STATUS_MSG_RIGHT_BORDER_COLOR TOSTRING(FG_WHITE)
+#define BG_STATUS_MSG_RIGHT_BORDER_COLOR TOSTRING(BG_BLACK)
 // --------------------------------
 
 #define CTRL_KEY(k) ((k) & 0x1f)
@@ -162,7 +174,9 @@ void abFree(struct appendBuffer *buffer);
 // Output ---
 void editorAddMessage(struct appendBuffer *buffer, char *message, int messageLen);
 void editorScroll();
+void editorDrawTopBorder(struct appendBuffer * buffer);
 void editorDrawRows(struct appendBuffer *buffer);
+void editorDrawBottomBorder(struct appendBuffer *buffer);
 void editorDrawStatusBar(struct appendBuffer *buffer);
 void editorDrawMessageBar(struct appendBuffer *buffer);
 void editorRefreshScreen();
@@ -476,10 +490,18 @@ void editorScroll() {
 	}
 }
 
+void editorDrawTopBorder(struct appendBuffer * buffer) {
+	abAppend(buffer, "\x1b[" FG_TOP_LEFT_CORNER_COLOR ";" BG_TOP_LEFT_CORNER_COLOR "m", 9);
+	abAppend(buffer, "" TOP_LEFT_CORNER "", sizeof("" TOP_LEFT_CORNER ""));
+	for (int i=0; i<= Editor.screencols-1; i++) {
+		abAppend(buffer, "" TOP_BORDER "", sizeof("" TOP_BORDER ""));
+	}
+}
+
 void editorDrawRows(struct appendBuffer *buffer) {
 	int y;
 	for(y=0; y < Editor.screenrows; y++) {
-		int filerow = y + Editor.rowOffset;
+		int filerow = (y + Editor.rowOffset);
 		if (filerow >= Editor.numrows) {
 			if (Editor.numrows == 0 && y == Editor.screenrows / 3) {
 				char ssector[WELCOME_MSG_MAXBUF];
@@ -515,7 +537,7 @@ void editorDrawRows(struct appendBuffer *buffer) {
 			abAppend(buffer, "\x1b[" FG_LEFT_BORDER_COLOR ";" BG_LEFT_BORDER_COLOR "m" , 9);
 			abAppend(buffer, ""LEFT_BORDER"", sizeof(LEFT_BORDER));
 			abAppend(buffer, "\x1b[m", 3);
-			abAppend(buffer, "\x1b[" FG_EDITOR_COLOR  ";" BG_EDITOR_COLOR "m", 9);	// set fg and bg color 
+			abAppend(buffer, "\x1b[" FG_EDITOR_COLOR  ";" BG_EDITOR_COLOR "m", 9);	// set fg and bg color 			
 			abAppend(buffer, &Editor.row[filerow].render[Editor.colOffset], len);
 		}
 
@@ -525,12 +547,24 @@ void editorDrawRows(struct appendBuffer *buffer) {
 	}
 }
 
+void editorDrawBottomBorder(struct appendBuffer *buffer) {
+
+	abAppend(buffer, "\x1b[" FG_BOTTOM_LEFT_CORNER_COLOR ";" BG_BOTTOM_LEFT_CORNER_COLOR "m", 9);
+	abAppend(buffer, "" BOTTOM_LEFT_CORNER "", sizeof(BOTTOM_LEFT_CORNER));
+	
+	abAppend(buffer, "\x1b[" FG_BOTTOM_BORDER_COLOR ";" BG_BOTTOM_BORDER_COLOR "m", 9);
+	for (int i=0; i <= Editor.screencols-1; i++) {
+		abAppend(buffer, "" BOTTOM_BORDER  "", sizeof(BOTTOM_BORDER));
+	}
+	abAppend(buffer, "\r\n", 2);
+
+}
+
 void editorDrawStatusBar(struct appendBuffer *buffer) {
 	char file_status[80], row_status[80];
 	int maxlen_of_file_name = 20;
 	size_t filename_len = 0;
 	int len = 0;
-	int bottom_border_len = 0;
 	int rowlen = 0;
 
 	int index_filetype = 0;
@@ -555,9 +589,11 @@ void editorDrawStatusBar(struct appendBuffer *buffer) {
 			len = snprintf(file_status, sizeof(file_status), " %.20s - %d line(s)", Editor.filename, Editor.numrows);
 			rowlen = snprintf(row_status, sizeof(row_status), " %d/%d ", Editor.cursorY + 1, Editor.numrows);
 		} else {
-			// determining the appropriate length for displaying a filename
-			// so that the total number of characters shown based on the
-			// format: "%.*s..%s", is equals exactly 20
+			/*
+			determining the appropriate length for displaying a filename
+			so that the total number of characters shown based on the
+			format: "%.*s..%s", is equals exactly 20
+			*/
 			int num_of_periods = 2;
 			if (index_filetype >= maxlen_of_file_name) {
 				len = snprintf(file_status, sizeof(file_status), " %.17s... - %d line(s)", Editor.filename, Editor.numrows);
@@ -574,16 +610,7 @@ void editorDrawStatusBar(struct appendBuffer *buffer) {
 	}
 	
 	if (len > Editor.screencols) len = Editor.screencols;
-	abAppend(buffer, "\x1b[" FG_BOTTOM_LEFT_CORNER_COLOR ";" BG_BOTTOM_LEFT_CORNER_COLOR "m", 9);
-	abAppend(buffer, "" BOTTOM_LEFT_CORNER "", sizeof(BOTTOM_LEFT_CORNER));
 	
-	abAppend(buffer, "\x1b[" FG_BOTTOM_BORDER_COLOR ";" BG_BOTTOM_BORDER_COLOR "m", 9);
-	while (bottom_border_len < (Editor.screencols)) {
-		abAppend(buffer, "" BOTTOM_BORDER  "", sizeof(BOTTOM_BORDER));
-		bottom_border_len++;
-	}
-	abAppend(buffer, "\r\n", 2);
-
 	abAppend(buffer, "\x1b[" FG_STATUS_BAR_COLOR ";" BG_STATUS_BAR_COLOR "m", 9);
 	abAppend(buffer, file_status, len);
 	while (len < Editor.screencols+1) {
@@ -602,15 +629,20 @@ void editorDrawStatusBar(struct appendBuffer *buffer) {
 
 void editorDrawMessageBar(struct appendBuffer *buffer) {
 	abAppend(buffer, "\x1b[K", 3);
+	abAppend(buffer, "\x1b[" FG_STATUS_MSG_LEFT_BORDER_COLOR ";" BG_STATUS_MSG_LEFT_BORDER_COLOR "m", 9);
+	abAppend(buffer, "" STATUS_MSG_LEFT_BORDER "", sizeof(STATUS_MSG_LEFT_BORDER));
 	abAppend(buffer, "\x1b[" FG_STATUS_MSG_COLOR ";" BG_STATUS_MSG_COLOR "m", 9);
+
 	abAppend(buffer, " ", 1);
 	int message_len = strlen(Editor.status_msg);
 	if (message_len > Editor.screencols) message_len = Editor.screencols;
 	if (message_len && time(NULL) - Editor.status_msg_time < 5) {
 		abAppend(buffer, Editor.status_msg, message_len);
 	}
-	abAppend(buffer, "\x1b[" FG_STATUS_MSG_END_BORDER_COLOR ";" BG_STATUS_MSG_END_BORDER_COLOR "m", 9);
-	abAppend(buffer, "" STATUS_MSG_END_BORDER "", sizeof(STATUS_MSG_END_BORDER));
+	abAppend(buffer, " ", 1);
+	
+	abAppend(buffer, "\x1b[" FG_STATUS_MSG_RIGHT_BORDER_COLOR ";" BG_STATUS_MSG_RIGHT_BORDER_COLOR "m", 9);
+	abAppend(buffer, "" STATUS_MSG_RIGHT_BORDER "", sizeof(STATUS_MSG_RIGHT_BORDER));
 	abAppend(buffer, "\x1b[m", 3);
 }
 
@@ -622,13 +654,15 @@ void editorRefreshScreen() {
 	abAppend(&add_buffer, "\x1b[?25l", 6);  	// makes the cursor invisible      
 	abAppend(&add_buffer, "\x1b[H", 3);     	// move the cursor to the top-left corner
 
+	editorDrawTopBorder(&add_buffer);
 	editorDrawRows(&add_buffer);
+	editorDrawBottomBorder(&add_buffer);
 	editorDrawStatusBar(&add_buffer);
 	editorDrawMessageBar(&add_buffer);
 
 	char buf_cursor[32];
 	// set the cursor position
-	snprintf(buf_cursor, sizeof(buf_cursor), "\x1b[%d;%dH", (Editor.cursorY - Editor.rowOffset) + 1, (Editor.renderX - Editor.colOffset) + 2);
+	snprintf(buf_cursor, sizeof(buf_cursor), "\x1b[%d;%dH", (Editor.cursorY - Editor.rowOffset) + 2, (Editor.renderX - Editor.colOffset) + 2);
 	abAppend(&add_buffer, buf_cursor, strlen(buf_cursor));
 
 	abAppend(&add_buffer, "\x1b[?25h", 6);  // makes the cursor visible
@@ -648,7 +682,7 @@ void editorSetStatusMessage(const char *fmt, ...) {
 // Input ---
 void editorMoveCursor(int key) {
 	editorRow *currentRow;
-	
+	// Editor.numrows--;
 	// check if the cursor's vertical position is outside the existing rows
 	if (Editor.cursorY >= Editor.numrows) {
 		currentRow = NULL;
@@ -769,6 +803,6 @@ void initEditor() {
 	Editor.status_msg_time = 0;
 	
 	if (getWindowSize(&Editor.screenrows, &Editor.screencols) == -1) die("getWindowSize");
-	Editor.screenrows -= 3;
+	Editor.screenrows -= 4;
 	Editor.screencols -= 1;
 }
